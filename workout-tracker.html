@@ -12,6 +12,48 @@
   #root { min-height: 100vh; }
   #boot { min-height: 100vh; display: flex; align-items: center; justify-content: center;
     font-family: system-ui, sans-serif; color: #7C7F85; font-size: 15px; }
+
+  /* ===== Dark Mode (filter-based, keeps colored accents readable) ===== */
+  html.wt-dark { background: #14130F; }
+  html.wt-dark #root { filter: invert(0.92) hue-rotate(180deg); }
+  /* counter-invert media so photos/icons keep their real colors */
+  html.wt-dark #root img,
+  html.wt-dark #root video,
+  html.wt-dark #root canvas { filter: invert(1) hue-rotate(180deg); }
+  html.wt-dark #boot { color: #B8BBC1; }
+
+  /* ===== Backup / settings floating panel (independent of the React app) ===== */
+  #wt-fab { position: fixed; bottom: 14px; left: 14px; z-index: 99999;
+    width: 46px; height: 46px; border-radius: 50%; border: none; cursor: pointer;
+    background: #2F3033; color: #fff; font-size: 20px; line-height: 46px; text-align: center;
+    box-shadow: 0 4px 14px rgba(0,0,0,.28); transition: transform .15s ease; }
+  #wt-fab:active { transform: scale(.92); }
+  #wt-panel { position: fixed; bottom: 70px; left: 14px; z-index: 99999;
+    width: 220px; background: #fff; color: #2F3033; border-radius: 14px;
+    box-shadow: 0 8px 30px rgba(0,0,0,.22); padding: 12px; display: none;
+    font-family: system-ui, sans-serif; direction: rtl; }
+  html.wt-dark #wt-panel { background: #232427; color: #E9E9EC; }
+  #wt-panel.open { display: block; }
+  #wt-panel h4 { margin: 2px 0 10px; font-size: 14px; font-weight: 700; }
+  .wt-btn { display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box;
+    margin: 6px 0; padding: 10px 12px; border: none; border-radius: 10px; cursor: pointer;
+    font-size: 14px; font-family: inherit; text-align: right; background: #EEEDEA; color: #2F3033; }
+  html.wt-dark .wt-btn { background: #34363A; color: #E9E9EC; }
+  .wt-btn:active { opacity: .8; }
+  .wt-row { display: flex; align-items: center; justify-content: space-between;
+    margin: 6px 2px; font-size: 14px; }
+  .wt-switch { position: relative; width: 42px; height: 24px; }
+  .wt-switch input { opacity: 0; width: 0; height: 0; }
+  .wt-slider { position: absolute; inset: 0; background: #C9C7C2; border-radius: 24px; transition: .2s; cursor: pointer; }
+  .wt-slider:before { content: ""; position: absolute; height: 18px; width: 18px; right: 3px; top: 3px;
+    background: #fff; border-radius: 50%; transition: .2s; }
+  .wt-switch input:checked + .wt-slider { background: #6AA84F; }
+  .wt-switch input:checked + .wt-slider:before { transform: translateX(-18px); }
+  #wt-toast { position: fixed; bottom: 70px; left: 50%; transform: translateX(-50%);
+    background: #2F3033; color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 14px;
+    font-family: system-ui, sans-serif; z-index: 100000; opacity: 0; transition: opacity .25s;
+    pointer-events: none; direction: rtl; }
+  #wt-toast.show { opacity: 1; }
 </style>
 </head>
 <body>
@@ -94,6 +136,144 @@ react/cjs/react-jsx-runtime.production.js:
    *)
 */
 
+//]]>
+</script>
+<script>
+//<![CDATA[
+/* ===================================================================
+   שכבת כלים עצמאית: גיבוי/ייצוא/ייבוא נתונים + מצב כהה.
+   לא נוגעת בלוגיקת ה-React — קוראת/כותבת ישירות אל localStorage.
+   =================================================================== */
+(function () {
+  "use strict";
+  var STORE_KEYS = ["gym-tracker-v2", "gym-tracker-v1", "gym-tracker-session"];
+  var DARK_KEY = "wt-dark-mode";
+
+  /* ---------- Dark mode ---------- */
+  function applyDark(on) {
+    document.documentElement.classList.toggle("wt-dark", !!on);
+    var tc = document.querySelector('meta[name="theme-color"]');
+    if (tc) tc.setAttribute("content", on ? "#14130F" : "#E7E5E0");
+  }
+  var darkOn = localStorage.getItem(DARK_KEY) === "1";
+  applyDark(darkOn);
+
+  /* ---------- Toast ---------- */
+  var toastEl, toastT;
+  function toast(msg) {
+    if (!toastEl) {
+      toastEl = document.createElement("div");
+      toastEl.id = "wt-toast";
+      document.body.appendChild(toastEl);
+    }
+    toastEl.textContent = msg;
+    toastEl.classList.add("show");
+    clearTimeout(toastT);
+    toastT = setTimeout(function () { toastEl.classList.remove("show"); }, 2200);
+  }
+
+  /* ---------- Export ---------- */
+  function exportData() {
+    var bundle = { app: "workout-tracker", exportedAt: new Date().toISOString(), version: 1, data: {} };
+    var found = 0;
+    STORE_KEYS.forEach(function (k) {
+      var v = localStorage.getItem(k);
+      if (v !== null) { bundle.data[k] = v; found++; }
+    });
+    if (!found) { toast("אין נתונים לייצוא עדיין"); return; }
+    var blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    var d = new Date();
+    var stamp = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    a.href = url;
+    a.download = "workout-backup-" + stamp + ".json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    toast("הגיבוי הורד בהצלחה");
+  }
+
+  /* ---------- Import ---------- */
+  function importData(file) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var parsed = JSON.parse(reader.result);
+        var data = parsed && parsed.data ? parsed.data : null;
+        if (!data || typeof data !== "object") { toast("קובץ גיבוי לא תקין"); return; }
+        if (!confirm("שחזור גיבוי ידרוס את הנתונים הנוכחיים. להמשיך?")) return;
+        var restored = 0;
+        STORE_KEYS.forEach(function (k) {
+          if (Object.prototype.hasOwnProperty.call(data, k)) {
+            localStorage.setItem(k, data[k]);
+            restored++;
+          }
+        });
+        if (restored) {
+          toast("שוחזרו הנתונים — טוען מחדש…");
+          setTimeout(function () { location.reload(); }, 900);
+        } else {
+          toast("לא נמצאו נתונים מתאימים בקובץ");
+        }
+      } catch (e) {
+        toast("שגיאה בקריאת הקובץ");
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  /* ---------- UI ---------- */
+  function build() {
+    var fab = document.createElement("button");
+    fab.id = "wt-fab";
+    fab.type = "button";
+    fab.setAttribute("aria-label", "גיבוי והגדרות");
+    fab.textContent = "⚙";
+
+    var panel = document.createElement("div");
+    panel.id = "wt-panel";
+    panel.innerHTML =
+      '<h4>גיבוי והגדרות</h4>' +
+      '<div class="wt-row"><span>מצב כהה</span>' +
+        '<label class="wt-switch"><input type="checkbox" id="wt-dark-toggle">' +
+        '<span class="wt-slider"></span></label></div>' +
+      '<button class="wt-btn" id="wt-export">⬇ ייצוא גיבוי</button>' +
+      '<button class="wt-btn" id="wt-import">⬆ שחזור גיבוי</button>' +
+      '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">';
+
+    document.body.appendChild(fab);
+    document.body.appendChild(panel);
+
+    fab.addEventListener("click", function () { panel.classList.toggle("open"); });
+    document.addEventListener("click", function (e) {
+      if (!panel.contains(e.target) && e.target !== fab) panel.classList.remove("open");
+    });
+
+    var darkToggle = panel.querySelector("#wt-dark-toggle");
+    darkToggle.checked = darkOn;
+    darkToggle.addEventListener("change", function () {
+      darkOn = darkToggle.checked;
+      localStorage.setItem(DARK_KEY, darkOn ? "1" : "0");
+      applyDark(darkOn);
+    });
+
+    panel.querySelector("#wt-export").addEventListener("click", exportData);
+    var fileInput = panel.querySelector("#wt-file");
+    panel.querySelector("#wt-import").addEventListener("click", function () { fileInput.click(); });
+    fileInput.addEventListener("change", function () {
+      if (fileInput.files && fileInput.files[0]) importData(fileInput.files[0]);
+      fileInput.value = "";
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", build);
+  } else {
+    build();
+  }
+})();
 //]]>
 </script>
 </body>
