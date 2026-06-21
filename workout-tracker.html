@@ -23,12 +23,12 @@
   html.wt-dark #boot { color: #B8BBC1; }
 
   /* ===== Backup / settings floating panel (independent of the React app) ===== */
-  #wt-fab { position: fixed; bottom: 14px; left: 14px; z-index: 99999;
+  #wt-fab { position: fixed; bottom: calc(74px + env(safe-area-inset-bottom)); left: 14px; z-index: 99999;
     width: 46px; height: 46px; border-radius: 50%; border: none; cursor: pointer;
     background: #2F3033; color: #fff; font-size: 20px; line-height: 46px; text-align: center;
     box-shadow: 0 4px 14px rgba(0,0,0,.28); transition: transform .15s ease; }
   #wt-fab:active { transform: scale(.92); }
-  #wt-panel { position: fixed; bottom: 70px; left: 14px; z-index: 99999;
+  #wt-panel { position: fixed; bottom: calc(128px + env(safe-area-inset-bottom)); left: 14px; z-index: 99999;
     width: 220px; background: #fff; color: #2F3033; border-radius: 14px;
     box-shadow: 0 8px 30px rgba(0,0,0,.22); padding: 12px; display: none;
     font-family: system-ui, sans-serif; direction: rtl; }
@@ -101,6 +101,35 @@
   .wt-rec .orm { font-size: 20px; font-weight: 800; white-space: nowrap; padding-inline-start: 10px; }
   .wt-rec .orm small { font-size: 12px; font-weight: 600; color: #7C7F85; }
   .wt-empty { color: #7C7F85; font-size: 15px; text-align: center; padding: 40px 20px; }
+
+  /* ===== Modernized bottom navigation bar (overrides the app's inline styles) ===== */
+  #root nav {
+    background: rgba(251, 250, 248, .82) !important;
+    -webkit-backdrop-filter: saturate(160%) blur(14px); backdrop-filter: saturate(160%) blur(14px);
+    border-top: 1px solid rgba(0, 0, 0, .04) !important;
+    box-shadow: 0 -6px 24px rgba(0, 0, 0, .07) !important;
+    padding-bottom: env(safe-area-inset-bottom) !important;
+  }
+  #root nav > div { padding: 7px 8px 6px !important; gap: 2px; }
+  #root nav button {
+    position: relative !important;
+    border-radius: 16px !important;
+    margin: 0 3px !important;
+    padding: 8px 0 7px !important;
+    gap: 3px !important;
+    transition: color .18s ease, background .18s ease, transform .12s ease !important;
+  }
+  #root nav button:active { transform: scale(.93) !important; }
+  #root nav button svg { width: 23px !important; height: 23px !important; transition: transform .18s ease; }
+  #root nav button span { font-size: 11px !important; font-weight: 700 !important; letter-spacing: .1px; }
+  /* Active tab: accent colour + soft pill + top pill indicator (class set by JS) */
+  #root nav button.wt-active { color: #2F7A3D !important; background: rgba(47, 122, 61, .10) !important; }
+  #root nav button.wt-active span { color: #2F7A3D !important; font-weight: 800 !important; }
+  #root nav button.wt-active svg { transform: translateY(-1px) scale(1.06); }
+  #root nav button.wt-active::before {
+    content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+    width: 22px; height: 3px; border-radius: 0 0 4px 4px; background: #2F7A3D;
+  }
 </style>
 </head>
 <body>
@@ -452,6 +481,45 @@ react/cjs/react-jsx-runtime.production.js:
     doneByEx = countDone(localStorage.getItem("gym-tracker-session"));
   }
 
+  /* ---------- Highlight the active bottom-nav tab ----------
+     The app marks the active tab only via inline text colour (dark vs grey).
+     We find the darkest button and tag it with .wt-active so our CSS can give
+     it the modern accent pill. A MutationObserver re-runs it on tab changes. */
+  function luminance(color) {
+    var m = (color || "").match(/(\d+)[,\s]+(\d+)[,\s]+(\d+)/);
+    if (!m) return 999;
+    return 0.299 * +m[1] + 0.587 * +m[2] + 0.114 * +m[3];
+  }
+  var navHookT = null;
+  function refreshActiveTab() {
+    var nav = document.querySelector("#root nav");
+    if (!nav) return;
+    var btns = nav.querySelectorAll("button");
+    if (!btns.length) return;
+    var best = null, min = Infinity;
+    btns.forEach(function (b) {
+      // Use the app's own inline colour (dark = active), not the computed
+      // colour, which our .wt-active accent would otherwise pollute.
+      var m = (b.getAttribute("style") || "").match(/color:\s*([^;]+)/);
+      var l = luminance(m ? m[1] : "");
+      if (l < min) { min = l; best = b; }
+    });
+    btns.forEach(function (b) { b.classList.toggle("wt-active", b === best); });
+  }
+  function scheduleRefresh() { clearTimeout(navHookT); navHookT = setTimeout(refreshActiveTab, 40); }
+  function installNavHook() {
+    var root = document.getElementById("root");
+    if (!root) return;
+    new MutationObserver(scheduleRefresh).observe(root, {
+      childList: true, subtree: true, attributes: true, attributeFilter: ["style"]
+    });
+    // Tab taps re-render asynchronously, so refresh shortly after any nav click.
+    root.addEventListener("click", function (e) {
+      if (e.target.closest("nav")) { setTimeout(refreshActiveTab, 60); setTimeout(refreshActiveTab, 200); }
+    }, true);
+    refreshActiveTab();
+  }
+
   /* ---------- UI ---------- */
   function build() {
     var fab = document.createElement("button");
@@ -587,6 +655,9 @@ react/cjs/react-jsx-runtime.production.js:
 
     /* Auto-open the rest timer whenever a set is marked done */
     installSessionHook();
+
+    /* Keep the modern bottom-nav active tab highlighted */
+    installNavHook();
   }
 
   /* ---------- PWA: offline support + installable ---------- */
