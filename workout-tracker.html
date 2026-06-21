@@ -469,16 +469,17 @@ react/cjs/react-jsx-runtime.production.js:
     }
   }
   function installSessionHook() {
-    var orig = localStorage.setItem.bind(localStorage);
-    localStorage.setItem = function (key, value) {
-      var res = orig(key, value);
-      if (key === "gym-tracker-session") {
-        try { onSessionWrite(value); } catch (e) { /* never break the app */ }
-      }
-      return res;
-    };
-    // Seed the baseline from any session already in storage.
-    doneByEx = countDone(localStorage.getItem("gym-tracker-session"));
+    // Poll the session in storage instead of overriding localStorage.setItem,
+    // which is unreliable on iOS Safari. When the per-exercise "done" count
+    // goes up between polls, the user just completed a set -> open the timer.
+    var lastRaw = localStorage.getItem("gym-tracker-session");
+    doneByEx = countDone(lastRaw); // seed the baseline so it never fires on load
+    setInterval(function () {
+      var raw = localStorage.getItem("gym-tracker-session");
+      if (raw === lastRaw) return;
+      lastRaw = raw;
+      try { onSessionWrite(raw); } catch (e) { /* never break the app */ }
+    }, 500);
   }
 
   /* ---------- Highlight the active bottom-nav tab ----------
