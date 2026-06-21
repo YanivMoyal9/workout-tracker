@@ -23,12 +23,12 @@
   html.wt-dark #boot { color: #B8BBC1; }
 
   /* ===== Backup / settings floating panel (independent of the React app) ===== */
-  #wt-fab { position: fixed; bottom: 14px; left: 14px; z-index: 99999;
+  #wt-fab { position: fixed; bottom: calc(74px + env(safe-area-inset-bottom)); left: 14px; z-index: 99999;
     width: 46px; height: 46px; border-radius: 50%; border: none; cursor: pointer;
     background: #2F3033; color: #fff; font-size: 20px; line-height: 46px; text-align: center;
     box-shadow: 0 4px 14px rgba(0,0,0,.28); transition: transform .15s ease; }
   #wt-fab:active { transform: scale(.92); }
-  #wt-panel { position: fixed; bottom: 70px; left: 14px; z-index: 99999;
+  #wt-panel { position: fixed; bottom: calc(128px + env(safe-area-inset-bottom)); left: 14px; z-index: 99999;
     width: 220px; background: #fff; color: #2F3033; border-radius: 14px;
     box-shadow: 0 8px 30px rgba(0,0,0,.22); padding: 12px; display: none;
     font-family: system-ui, sans-serif; direction: rtl; }
@@ -101,6 +101,35 @@
   .wt-rec .orm { font-size: 20px; font-weight: 800; white-space: nowrap; padding-inline-start: 10px; }
   .wt-rec .orm small { font-size: 12px; font-weight: 600; color: #7C7F85; }
   .wt-empty { color: #7C7F85; font-size: 15px; text-align: center; padding: 40px 20px; }
+
+  /* ===== Modernized bottom navigation bar (overrides the app's inline styles) ===== */
+  #root nav {
+    background: rgba(251, 250, 248, .82) !important;
+    -webkit-backdrop-filter: saturate(160%) blur(14px); backdrop-filter: saturate(160%) blur(14px);
+    border-top: 1px solid rgba(0, 0, 0, .04) !important;
+    box-shadow: 0 -6px 24px rgba(0, 0, 0, .07) !important;
+    padding-bottom: env(safe-area-inset-bottom) !important;
+  }
+  #root nav > div { padding: 7px 8px 6px !important; gap: 2px; }
+  #root nav button {
+    position: relative !important;
+    border-radius: 16px !important;
+    margin: 0 3px !important;
+    padding: 8px 0 7px !important;
+    gap: 3px !important;
+    transition: color .18s ease, background .18s ease, transform .12s ease !important;
+  }
+  #root nav button:active { transform: scale(.93) !important; }
+  #root nav button svg { width: 23px !important; height: 23px !important; transition: transform .18s ease; }
+  #root nav button span { font-size: 11px !important; font-weight: 700 !important; letter-spacing: .1px; }
+  /* Active tab: accent colour + soft pill + top pill indicator (class set by JS) */
+  #root nav button.wt-active { color: #2F7A3D !important; background: rgba(47, 122, 61, .10) !important; }
+  #root nav button.wt-active span { color: #2F7A3D !important; font-weight: 800 !important; }
+  #root nav button.wt-active svg { transform: translateY(-1px) scale(1.06); }
+  #root nav button.wt-active::before {
+    content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+    width: 22px; height: 3px; border-radius: 0 0 4px 4px; background: #2F7A3D;
+  }
 </style>
 </head>
 <body>
@@ -204,6 +233,48 @@ react/cjs/react-jsx-runtime.production.js:
   }
   var darkOn = localStorage.getItem(DARK_KEY) === "1";
   applyDark(darkOn);
+
+  var AUTOTIMER_KEY = "wt-auto-timer";
+  var autoTimerOn = localStorage.getItem(AUTOTIMER_KEY) !== "0"; // default on
+
+  /* Disable the app's built-in inline rest timer so only our full-screen one
+     shows. The app reads settings from storage during its async boot effect
+     (which runs after this synchronous script), and then persists whatever is
+     in memory, so writing the flag now makes the change stick. We must cover
+     three cases: an existing v2 store, a legacy v1 store the app migrates from,
+     and a brand-new user with no stored state at all. */
+  (function disableBuiltinTimer() {
+    try {
+      var key = "gym-tracker-v2";
+      var raw = localStorage.getItem(key);
+      if (!raw) {
+        var legacy = localStorage.getItem("gym-tracker-v1");
+        if (legacy) { key = "gym-tracker-v1"; raw = legacy; }
+      }
+      if (!raw) {
+        // Fresh user: seed the app's default state with the built-in timer off.
+        localStorage.setItem("gym-tracker-v2", JSON.stringify({
+          logs: [], weights: {}, progress: {}, lastType: null,
+          settings: { restSec: 60, autoTimer: false }
+        }));
+        return;
+      }
+      var st = JSON.parse(raw);
+      if (!st.settings) st.settings = { restSec: 60 };
+      if (st.settings.autoTimer !== false) {
+        st.settings.autoTimer = false;
+        localStorage.setItem(key, JSON.stringify(st));
+      }
+    } catch (e) { /* leave app untouched on any parse error */ }
+  })();
+
+  function getRestSec() {
+    try {
+      var st = JSON.parse(localStorage.getItem("gym-tracker-v2") || "{}");
+      if (st.settings && st.settings.restSec) return st.settings.restSec;
+    } catch (e) {}
+    return 90;
+  }
 
   /* ---------- Toast ---------- */
   var toastEl, toastT;
@@ -360,11 +431,94 @@ react/cjs/react-jsx-runtime.production.js:
   function stopTimer() { cancelAnimationFrame(tRAF); tState = null; }
   function openTimer() {
     timerOv.classList.add("open");
-    var def = 90;
-    try { var st = JSON.parse(localStorage.getItem("gym-tracker-v2") || "{}"); if (st.settings && st.settings.restSec) def = st.settings.restSec; } catch (e) {}
-    startTimer(def);
+    startTimer(getRestSec());
   }
   function closeTimer() { timerOv.classList.remove("open"); stopTimer(); }
+
+  /* ---------- Auto-start rest timer when a set is marked done ----------
+     We can't hook the minified React handlers, so we intercept writes to
+     the session in localStorage and watch the per-exercise "done" counts.
+     When one goes up, the user just completed a set -> open the timer. */
+  var doneByEx = null; // baseline map, null until first session seen
+  function countDone(sessionVal) {
+    var map = {};
+    try {
+      var s = JSON.parse(sessionVal);
+      var entries = s && s.entries;
+      if (!entries) return null;
+      Object.keys(entries).forEach(function (exId) {
+        var arr = entries[exId];
+        if (!Array.isArray(arr)) return;
+        map[exId] = arr.filter(function (x) { return x && x.done; }).length;
+      });
+      return map;
+    } catch (e) { return null; }
+  }
+  function onSessionWrite(sessionVal) {
+    var map = countDone(sessionVal);
+    if (map === null) { doneByEx = null; return; } // session ended/cleared
+    if (doneByEx === null) { doneByEx = map; return; } // first sighting: baseline only
+    var bumpedEx = null;
+    Object.keys(map).forEach(function (exId) {
+      if (map[exId] > (doneByEx[exId] || 0)) bumpedEx = exId;
+    });
+    doneByEx = map;
+    if (bumpedEx && autoTimerOn) {
+      timerOv.classList.add("open");
+      startTimer(getRestSec());
+    }
+  }
+  function installSessionHook() {
+    var orig = localStorage.setItem.bind(localStorage);
+    localStorage.setItem = function (key, value) {
+      var res = orig(key, value);
+      if (key === "gym-tracker-session") {
+        try { onSessionWrite(value); } catch (e) { /* never break the app */ }
+      }
+      return res;
+    };
+    // Seed the baseline from any session already in storage.
+    doneByEx = countDone(localStorage.getItem("gym-tracker-session"));
+  }
+
+  /* ---------- Highlight the active bottom-nav tab ----------
+     The app marks the active tab only via inline text colour (dark vs grey).
+     We find the darkest button and tag it with .wt-active so our CSS can give
+     it the modern accent pill. A MutationObserver re-runs it on tab changes. */
+  function luminance(color) {
+    var m = (color || "").match(/(\d+)[,\s]+(\d+)[,\s]+(\d+)/);
+    if (!m) return 999;
+    return 0.299 * +m[1] + 0.587 * +m[2] + 0.114 * +m[3];
+  }
+  var navHookT = null;
+  function refreshActiveTab() {
+    var nav = document.querySelector("#root nav");
+    if (!nav) return;
+    var btns = nav.querySelectorAll("button");
+    if (!btns.length) return;
+    var best = null, min = Infinity;
+    btns.forEach(function (b) {
+      // Use the app's own inline colour (dark = active), not the computed
+      // colour, which our .wt-active accent would otherwise pollute.
+      var m = (b.getAttribute("style") || "").match(/color:\s*([^;]+)/);
+      var l = luminance(m ? m[1] : "");
+      if (l < min) { min = l; best = b; }
+    });
+    btns.forEach(function (b) { b.classList.toggle("wt-active", b === best); });
+  }
+  function scheduleRefresh() { clearTimeout(navHookT); navHookT = setTimeout(refreshActiveTab, 40); }
+  function installNavHook() {
+    var root = document.getElementById("root");
+    if (!root) return;
+    new MutationObserver(scheduleRefresh).observe(root, {
+      childList: true, subtree: true, attributes: true, attributeFilter: ["style"]
+    });
+    // Tab taps re-render asynchronously, so refresh shortly after any nav click.
+    root.addEventListener("click", function (e) {
+      if (e.target.closest("nav")) { setTimeout(refreshActiveTab, 60); setTimeout(refreshActiveTab, 200); }
+    }, true);
+    refreshActiveTab();
+  }
 
   /* ---------- UI ---------- */
   function build() {
@@ -380,6 +534,9 @@ react/cjs/react-jsx-runtime.production.js:
       '<h4>כלים והגדרות</h4>' +
       '<div class="wt-row"><span>מצב כהה</span>' +
         '<label class="wt-switch"><input type="checkbox" id="wt-dark-toggle">' +
+        '<span class="wt-slider"></span></label></div>' +
+      '<div class="wt-row"><span>טיימר אוטומטי בסימון סט</span>' +
+        '<label class="wt-switch"><input type="checkbox" id="wt-auto-toggle">' +
         '<span class="wt-slider"></span></label></div>' +
       '<button class="wt-btn" id="wt-records">🏆 שיאים אישיים</button>' +
       '<button class="wt-btn" id="wt-rest">⏱ טיימר מנוחה</button>' +
@@ -446,6 +603,14 @@ react/cjs/react-jsx-runtime.production.js:
       applyDark(darkOn);
     });
 
+    /* Auto rest timer on set completion */
+    var autoToggle = panel.querySelector("#wt-auto-toggle");
+    autoToggle.checked = autoTimerOn;
+    autoToggle.addEventListener("change", function () {
+      autoTimerOn = autoToggle.checked;
+      localStorage.setItem(AUTOTIMER_KEY, autoTimerOn ? "1" : "0");
+    });
+
     /* Backup */
     panel.querySelector("#wt-export").addEventListener("click", exportData);
     var fileInput = panel.querySelector("#wt-file");
@@ -487,11 +652,21 @@ react/cjs/react-jsx-runtime.production.js:
     document.addEventListener("keydown", function (e) {
       if (e.key === "Escape") { closeTimer(); recOv.classList.remove("open"); }
     });
+
+    /* Auto-open the rest timer whenever a set is marked done */
+    installSessionHook();
+
+    /* Keep the modern bottom-nav active tab highlighted */
+    installNavHook();
   }
 
-  /* ---------- PWA: offline support + installable ---------- */
+  /* ---------- PWA: installable manifest (no service worker) ----------
+     Earlier versions registered a cache-first service worker that pinned a
+     stale copy of the app. We no longer register one, and we proactively
+     remove any previously installed worker and its caches so clients always
+     get the live version. sw.js is now a self-unregistering kill switch. */
   function initPWA() {
-    if (location.protocol !== "http:" && location.protocol !== "https:") return; // SW needs http(s)
+    if (location.protocol !== "http:" && location.protocol !== "https:") return;
     if (!document.querySelector('link[rel="manifest"]')) {
       var link = document.createElement("link");
       link.rel = "manifest";
@@ -499,9 +674,14 @@ react/cjs/react-jsx-runtime.production.js:
       document.head.appendChild(link);
     }
     if ("serviceWorker" in navigator) {
-      window.addEventListener("load", function () {
-        navigator.serviceWorker.register("sw.js").catch(function () { /* offline support unavailable */ });
-      });
+      navigator.serviceWorker.getRegistrations().then(function (regs) {
+        regs.forEach(function (r) { r.unregister(); });
+      }).catch(function () {});
+    }
+    if (window.caches && caches.keys) {
+      caches.keys().then(function (keys) {
+        keys.forEach(function (k) { caches.delete(k); });
+      }).catch(function () {});
     }
   }
   initPWA();
