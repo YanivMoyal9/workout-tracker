@@ -205,6 +205,9 @@ react/cjs/react-jsx-runtime.production.js:
   var darkOn = localStorage.getItem(DARK_KEY) === "1";
   applyDark(darkOn);
 
+  var AUTOTIMER_KEY = "wt-auto-timer";
+  var autoTimerOn = localStorage.getItem(AUTOTIMER_KEY) !== "0"; // default on
+
   /* ---------- Toast ---------- */
   var toastEl, toastT;
   function toast(msg) {
@@ -279,6 +282,11 @@ react/cjs/react-jsx-runtime.production.js:
     hammer: "כפיפת פטישים", squat: "סקוואט", rdl: "דדליפט רומני",
     legpress: "לחיצת רגליים", hamcurl: "כפיפת ברכיים", calf: "הרמות עקב",
     plank: "פלאנק", crunch: "Crunch", legraise: "הרמות רגליים"
+  };
+  var EX_REST = {
+    bench: 90, latpd: 90, ohp: 90, row: 90, fly: 60, facepull: 60, latraise: 60,
+    triceps: 60, curl: 60, hammer: 60, squat: 90, rdl: 90, legpress: 90,
+    hamcurl: 90, calf: 45, plank: 60, crunch: 45, legraise: 45
   };
   function epley(w, r) { return w * (1 + r / 30); } // Estimated 1RM
   function fmtDate(iso) {
@@ -366,6 +374,53 @@ react/cjs/react-jsx-runtime.production.js:
   }
   function closeTimer() { timerOv.classList.remove("open"); stopTimer(); }
 
+  /* ---------- Auto-start rest timer when a set is marked done ----------
+     We can't hook the minified React handlers, so we intercept writes to
+     the session in localStorage and watch the per-exercise "done" counts.
+     When one goes up, the user just completed a set -> open the timer. */
+  var doneByEx = null; // baseline map, null until first session seen
+  function countDone(sessionVal) {
+    var map = {};
+    try {
+      var s = JSON.parse(sessionVal);
+      var entries = s && s.entries;
+      if (!entries) return null;
+      Object.keys(entries).forEach(function (exId) {
+        var arr = entries[exId];
+        if (!Array.isArray(arr)) return;
+        map[exId] = arr.filter(function (x) { return x && x.done; }).length;
+      });
+      return map;
+    } catch (e) { return null; }
+  }
+  function onSessionWrite(sessionVal) {
+    var map = countDone(sessionVal);
+    if (map === null) { doneByEx = null; return; } // session ended/cleared
+    if (doneByEx === null) { doneByEx = map; return; } // first sighting: baseline only
+    var bumpedEx = null;
+    Object.keys(map).forEach(function (exId) {
+      if (map[exId] > (doneByEx[exId] || 0)) bumpedEx = exId;
+    });
+    doneByEx = map;
+    if (bumpedEx && autoTimerOn) {
+      var sec = EX_REST[bumpedEx] || 90;
+      timerOv.classList.add("open");
+      startTimer(sec);
+    }
+  }
+  function installSessionHook() {
+    var orig = localStorage.setItem.bind(localStorage);
+    localStorage.setItem = function (key, value) {
+      var res = orig(key, value);
+      if (key === "gym-tracker-session") {
+        try { onSessionWrite(value); } catch (e) { /* never break the app */ }
+      }
+      return res;
+    };
+    // Seed the baseline from any session already in storage.
+    doneByEx = countDone(localStorage.getItem("gym-tracker-session"));
+  }
+
   /* ---------- UI ---------- */
   function build() {
     var fab = document.createElement("button");
@@ -380,6 +435,9 @@ react/cjs/react-jsx-runtime.production.js:
       '<h4>כלים והגדרות</h4>' +
       '<div class="wt-row"><span>מצב כהה</span>' +
         '<label class="wt-switch"><input type="checkbox" id="wt-dark-toggle">' +
+        '<span class="wt-slider"></span></label></div>' +
+      '<div class="wt-row"><span>טיימר אוטומטי בסימון סט</span>' +
+        '<label class="wt-switch"><input type="checkbox" id="wt-auto-toggle">' +
         '<span class="wt-slider"></span></label></div>' +
       '<button class="wt-btn" id="wt-records">🏆 שיאים אישיים</button>' +
       '<button class="wt-btn" id="wt-rest">⏱ טיימר מנוחה</button>' +
@@ -446,6 +504,14 @@ react/cjs/react-jsx-runtime.production.js:
       applyDark(darkOn);
     });
 
+    /* Auto rest timer on set completion */
+    var autoToggle = panel.querySelector("#wt-auto-toggle");
+    autoToggle.checked = autoTimerOn;
+    autoToggle.addEventListener("change", function () {
+      autoTimerOn = autoToggle.checked;
+      localStorage.setItem(AUTOTIMER_KEY, autoTimerOn ? "1" : "0");
+    });
+
     /* Backup */
     panel.querySelector("#wt-export").addEventListener("click", exportData);
     var fileInput = panel.querySelector("#wt-file");
@@ -487,6 +553,9 @@ react/cjs/react-jsx-runtime.production.js:
     document.addEventListener("keydown", function (e) {
       if (e.key === "Escape") { closeTimer(); recOv.classList.remove("open"); }
     });
+
+    /* Auto-open the rest timer whenever a set is marked done */
+    installSessionHook();
   }
 
   /* ---------- PWA: offline support + installable ---------- */
