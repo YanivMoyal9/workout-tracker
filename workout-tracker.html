@@ -23,12 +23,7 @@
   html.wt-dark #boot { color: #B8BBC1; }
 
   /* ===== Backup / settings floating panel (independent of the React app) ===== */
-  #wt-fab { position: fixed; bottom: calc(74px + env(safe-area-inset-bottom)); left: 14px; z-index: 99999;
-    width: 46px; height: 46px; border-radius: 50%; border: none; cursor: pointer;
-    background: #2F3033; color: #fff; font-size: 20px; line-height: 46px; text-align: center;
-    box-shadow: 0 4px 14px rgba(0,0,0,.28); transition: transform .15s ease; }
-  #wt-fab:active { transform: scale(.92); }
-  #wt-panel { position: fixed; bottom: calc(128px + env(safe-area-inset-bottom)); left: 14px; z-index: 99999;
+  #wt-panel { position: fixed; bottom: calc(72px + env(safe-area-inset-bottom)); left: 14px; z-index: 99999;
     width: 220px; background: #fff; color: #2F3033; border-radius: 14px;
     box-shadow: 0 8px 30px rgba(0,0,0,.22); padding: 12px; display: none;
     font-family: system-ui, sans-serif; direction: rtl; }
@@ -387,6 +382,7 @@ react/cjs/react-jsx-runtime.production.js:
 
   /* ---------- Rest timer (independent, full-screen) ---------- */
   var timerOv, ringFg, timeB, timeSpan, RING_LEN, tState = null, tRAF = null, audioCtx = null;
+  var panel = null; // tools panel, toggled from the bottom-nav "כלים" tab
   function beep() {
     try {
       audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
@@ -499,21 +495,51 @@ react/cjs/react-jsx-runtime.production.js:
     if (!btns.length) return;
     var best = null, min = Infinity;
     btns.forEach(function (b) {
+      if (b.classList.contains("wt-tools-tab")) return; // our own tab, never "active"
       // Use the app's own inline colour (dark = active), not the computed
       // colour, which our .wt-active accent would otherwise pollute.
       var m = (b.getAttribute("style") || "").match(/color:\s*([^;]+)/);
       var l = luminance(m ? m[1] : "");
       if (l < min) { min = l; best = b; }
     });
-    btns.forEach(function (b) { b.classList.toggle("wt-active", b === best); });
+    btns.forEach(function (b) {
+      if (!b.classList.contains("wt-tools-tab")) b.classList.toggle("wt-active", b === best);
+    });
   }
-  function scheduleRefresh() { clearTimeout(navHookT); navHookT = setTimeout(refreshActiveTab, 40); }
+  /* Add a "כלים" (tools) tab to the app's bottom nav so the panel lives in the
+     bar instead of a floating button that overlaps content. The app may
+     re-render the nav, so we re-add the tab whenever it goes missing. */
+  function ensureToolsTab() {
+    var row = document.querySelector("#root nav > div");
+    if (!row || row.querySelector(".wt-tools-tab")) return;
+    var btn = document.createElement("button");
+    btn.className = "wt-tools-tab";
+    btn.type = "button";
+    btn.setAttribute("style", "flex:1 1 0%;background:none;border:none;cursor:pointer;color:rgb(124,127,133);display:flex;flex-direction:column;align-items:center;gap:2px;");
+    btn.innerHTML =
+      '<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+      '<line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line>' +
+      '<line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line>' +
+      '<line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line>' +
+      '<line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>' +
+      '<span>כלים</span>';
+    btn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      if (panel) panel.classList.toggle("open");
+    });
+    row.appendChild(btn);
+  }
+  function scheduleRefresh() {
+    clearTimeout(navHookT);
+    navHookT = setTimeout(function () { ensureToolsTab(); refreshActiveTab(); }, 40);
+  }
   function installNavHook() {
     var root = document.getElementById("root");
     if (!root) return;
     new MutationObserver(scheduleRefresh).observe(root, {
       childList: true, subtree: true, attributes: true, attributeFilter: ["style"]
     });
+    ensureToolsTab();
     // Tab taps re-render asynchronously, so refresh shortly after any nav click.
     root.addEventListener("click", function (e) {
       if (e.target.closest("nav")) { setTimeout(refreshActiveTab, 60); setTimeout(refreshActiveTab, 200); }
@@ -523,13 +549,7 @@ react/cjs/react-jsx-runtime.production.js:
 
   /* ---------- UI ---------- */
   function build() {
-    var fab = document.createElement("button");
-    fab.id = "wt-fab";
-    fab.type = "button";
-    fab.setAttribute("aria-label", "כלים והגדרות");
-    fab.textContent = "⚙";
-
-    var panel = document.createElement("div");
+    panel = document.createElement("div");
     panel.id = "wt-panel";
     panel.innerHTML =
       '<h4>כלים והגדרות</h4>' +
@@ -581,7 +601,6 @@ react/cjs/react-jsx-runtime.production.js:
       '<h2>🏆 שיאים אישיים</h2>' +
       '<div class="wt-rec-list" id="wt-rec-list"></div>';
 
-    document.body.appendChild(fab);
     document.body.appendChild(panel);
     document.body.appendChild(timerOv);
     document.body.appendChild(recOv);
@@ -590,9 +609,9 @@ react/cjs/react-jsx-runtime.production.js:
     timeB = timerOv.querySelector("#wt-time-b");
     timeSpan = timerOv.querySelector("#wt-time-s");
 
-    fab.addEventListener("click", function () { panel.classList.toggle("open"); });
+    // Close the panel when tapping outside it (but not on the "כלים" tab).
     document.addEventListener("click", function (e) {
-      if (!panel.contains(e.target) && e.target !== fab) panel.classList.remove("open");
+      if (!panel.contains(e.target) && !e.target.closest(".wt-tools-tab")) panel.classList.remove("open");
     });
 
     /* Dark mode */
