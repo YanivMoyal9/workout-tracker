@@ -211,15 +211,30 @@ react/cjs/react-jsx-runtime.production.js:
   /* Disable the app's built-in inline rest timer so only our full-screen one
      shows. The app reads settings from storage during its async boot effect
      (which runs after this synchronous script), and then persists whatever is
-     in memory, so flipping the stored flag now makes the change stick. */
+     in memory, so writing the flag now makes the change stick. We must cover
+     three cases: an existing v2 store, a legacy v1 store the app migrates from,
+     and a brand-new user with no stored state at all. */
   (function disableBuiltinTimer() {
     try {
-      var raw = localStorage.getItem("gym-tracker-v2");
-      if (!raw) return;
+      var key = "gym-tracker-v2";
+      var raw = localStorage.getItem(key);
+      if (!raw) {
+        var legacy = localStorage.getItem("gym-tracker-v1");
+        if (legacy) { key = "gym-tracker-v1"; raw = legacy; }
+      }
+      if (!raw) {
+        // Fresh user: seed the app's default state with the built-in timer off.
+        localStorage.setItem("gym-tracker-v2", JSON.stringify({
+          logs: [], weights: {}, progress: {}, lastType: null,
+          settings: { restSec: 60, autoTimer: false }
+        }));
+        return;
+      }
       var st = JSON.parse(raw);
-      if (st && st.settings && st.settings.autoTimer !== false) {
+      if (!st.settings) st.settings = { restSec: 60 };
+      if (st.settings.autoTimer !== false) {
         st.settings.autoTimer = false;
-        localStorage.setItem("gym-tracker-v2", JSON.stringify(st));
+        localStorage.setItem(key, JSON.stringify(st));
       }
     } catch (e) { /* leave app untouched on any parse error */ }
   })();
