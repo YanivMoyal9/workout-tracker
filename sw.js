@@ -1,6 +1,7 @@
 /* Service worker — offline support for the workout tracker.
-   Cache-first for the app shell so it works without a network in the gym. */
-var CACHE = "workout-tracker-v1";
+   Network-first so the app always updates when online (cache-first would
+   pin a stale version), falling back to the cache only when offline. */
+var CACHE = "workout-tracker-v2";
 var SHELL = [
   "./",
   "workout-tracker.html",
@@ -22,7 +23,7 @@ self.addEventListener("activate", function (e) {
   e.waitUntil(
     caches.keys().then(function (keys) {
       return Promise.all(keys.map(function (k) {
-        if (k !== CACHE) return caches.delete(k);
+        if (k !== CACHE) return caches.delete(k); // purge older caches
       }));
     }).then(function () { return self.clients.claim(); })
   );
@@ -31,19 +32,19 @@ self.addEventListener("activate", function (e) {
 self.addEventListener("fetch", function (e) {
   var req = e.request;
   if (req.method !== "GET") return;
+  if (req.url.indexOf(self.location.origin) !== 0) return; // ignore cross-origin
   e.respondWith(
-    caches.match(req).then(function (cached) {
-      if (cached) return cached;
-      return fetch(req).then(function (res) {
-        // Cache successful same-origin responses for future offline use.
-        if (res && res.status === 200 && req.url.indexOf(self.location.origin) === 0) {
-          var copy = res.clone();
-          caches.open(CACHE).then(function (c) { c.put(req, copy); });
-        }
-        return res;
-      }).catch(function () {
-        // Offline and not cached: fall back to the app shell for navigations.
-        if (req.mode === "navigate") return caches.match("workout-tracker.html");
+    fetch(req).then(function (res) {
+      // Keep the cache fresh with the latest successful response.
+      if (res && res.status === 200) {
+        var copy = res.clone();
+        caches.open(CACHE).then(function (c) { c.put(req, copy); });
+      }
+      return res;
+    }).catch(function () {
+      // Offline: serve from cache, falling back to the app shell for navigations.
+      return caches.match(req).then(function (cached) {
+        return cached || (req.mode === "navigate" ? caches.match("workout-tracker.html") : undefined);
       });
     })
   );
