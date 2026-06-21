@@ -208,6 +208,30 @@ react/cjs/react-jsx-runtime.production.js:
   var AUTOTIMER_KEY = "wt-auto-timer";
   var autoTimerOn = localStorage.getItem(AUTOTIMER_KEY) !== "0"; // default on
 
+  /* Disable the app's built-in inline rest timer so only our full-screen one
+     shows. The app reads settings from storage during its async boot effect
+     (which runs after this synchronous script), and then persists whatever is
+     in memory, so flipping the stored flag now makes the change stick. */
+  (function disableBuiltinTimer() {
+    try {
+      var raw = localStorage.getItem("gym-tracker-v2");
+      if (!raw) return;
+      var st = JSON.parse(raw);
+      if (st && st.settings && st.settings.autoTimer !== false) {
+        st.settings.autoTimer = false;
+        localStorage.setItem("gym-tracker-v2", JSON.stringify(st));
+      }
+    } catch (e) { /* leave app untouched on any parse error */ }
+  })();
+
+  function getRestSec() {
+    try {
+      var st = JSON.parse(localStorage.getItem("gym-tracker-v2") || "{}");
+      if (st.settings && st.settings.restSec) return st.settings.restSec;
+    } catch (e) {}
+    return 90;
+  }
+
   /* ---------- Toast ---------- */
   var toastEl, toastT;
   function toast(msg) {
@@ -282,11 +306,6 @@ react/cjs/react-jsx-runtime.production.js:
     hammer: "כפיפת פטישים", squat: "סקוואט", rdl: "דדליפט רומני",
     legpress: "לחיצת רגליים", hamcurl: "כפיפת ברכיים", calf: "הרמות עקב",
     plank: "פלאנק", crunch: "Crunch", legraise: "הרמות רגליים"
-  };
-  var EX_REST = {
-    bench: 90, latpd: 90, ohp: 90, row: 90, fly: 60, facepull: 60, latraise: 60,
-    triceps: 60, curl: 60, hammer: 60, squat: 90, rdl: 90, legpress: 90,
-    hamcurl: 90, calf: 45, plank: 60, crunch: 45, legraise: 45
   };
   function epley(w, r) { return w * (1 + r / 30); } // Estimated 1RM
   function fmtDate(iso) {
@@ -368,9 +387,7 @@ react/cjs/react-jsx-runtime.production.js:
   function stopTimer() { cancelAnimationFrame(tRAF); tState = null; }
   function openTimer() {
     timerOv.classList.add("open");
-    var def = 90;
-    try { var st = JSON.parse(localStorage.getItem("gym-tracker-v2") || "{}"); if (st.settings && st.settings.restSec) def = st.settings.restSec; } catch (e) {}
-    startTimer(def);
+    startTimer(getRestSec());
   }
   function closeTimer() { timerOv.classList.remove("open"); stopTimer(); }
 
@@ -403,9 +420,8 @@ react/cjs/react-jsx-runtime.production.js:
     });
     doneByEx = map;
     if (bumpedEx && autoTimerOn) {
-      var sec = EX_REST[bumpedEx] || 90;
       timerOv.classList.add("open");
-      startTimer(sec);
+      startTimer(getRestSec());
     }
   }
   function installSessionHook() {
