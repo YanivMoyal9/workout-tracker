@@ -54,6 +54,53 @@
     font-family: system-ui, sans-serif; z-index: 100000; opacity: 0; transition: opacity .25s;
     pointer-events: none; direction: rtl; }
   #wt-toast.show { opacity: 1; }
+
+  /* ===== Full-screen overlays (rest timer / personal records) ===== */
+  .wt-overlay { position: fixed; inset: 0; z-index: 100001; display: none;
+    flex-direction: column; align-items: center; background: rgba(231,229,224,.97);
+    color: #2F3033; font-family: system-ui, sans-serif; direction: rtl;
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+    animation: wt-fade .2s ease; overflow-y: auto; }
+  html.wt-dark .wt-overlay { background: rgba(20,19,15,.97); color: #E9E9EC; }
+  .wt-overlay.open { display: flex; }
+  @keyframes wt-fade { from { opacity: 0; } to { opacity: 1; } }
+  .wt-close { position: absolute; top: 14px; left: 16px; width: 40px; height: 40px;
+    border: none; border-radius: 50%; background: rgba(0,0,0,.08); color: inherit;
+    font-size: 22px; cursor: pointer; }
+  html.wt-dark .wt-close { background: rgba(255,255,255,.12); }
+  .wt-overlay h2 { font-size: 19px; margin: 18px 0 4px; font-weight: 800; }
+
+  /* Rest timer */
+  #wt-timer { justify-content: center; }
+  .wt-ring-wrap { position: relative; width: 240px; height: 240px; margin: 8px 0 20px; }
+  .wt-ring-wrap svg { transform: rotate(-90deg); }
+  .wt-ring-bg { fill: none; stroke: rgba(0,0,0,.10); stroke-width: 14; }
+  html.wt-dark .wt-ring-bg { stroke: rgba(255,255,255,.12); }
+  .wt-ring-fg { fill: none; stroke: #6AA84F; stroke-width: 14; stroke-linecap: round;
+    transition: stroke-dashoffset .25s linear; }
+  .wt-ring-fg.over { stroke: #D9744F; }
+  .wt-time { position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; }
+  .wt-time b { font-size: 52px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .wt-time span { font-size: 14px; color: #7C7F85; margin-top: 4px; }
+  .wt-presets, .wt-tcontrols { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .wt-presets { margin-bottom: 14px; }
+  .wt-chip { padding: 9px 16px; border: none; border-radius: 999px; cursor: pointer;
+    font-size: 15px; font-family: inherit; background: #DEDCD7; color: #2F3033; }
+  html.wt-dark .wt-chip { background: #34363A; color: #E9E9EC; }
+  .wt-chip.primary { background: #2F3033; color: #fff; }
+  html.wt-dark .wt-chip.primary { background: #6AA84F; }
+
+  /* Personal records */
+  #wt-records .wt-rec-list { width: 100%; max-width: 460px; padding: 0 16px 32px; box-sizing: border-box; }
+  .wt-rec { display: flex; align-items: center; justify-content: space-between;
+    background: rgba(255,255,255,.7); border-radius: 12px; padding: 12px 14px; margin: 8px 0; }
+  html.wt-dark .wt-rec { background: rgba(255,255,255,.06); }
+  .wt-rec .nm { font-size: 14px; font-weight: 700; }
+  .wt-rec .sub { font-size: 12px; color: #7C7F85; margin-top: 3px; }
+  .wt-rec .orm { font-size: 20px; font-weight: 800; white-space: nowrap; padding-inline-start: 10px; }
+  .wt-rec .orm small { font-size: 12px; font-weight: 600; color: #7C7F85; }
+  .wt-empty { color: #7C7F85; font-size: 15px; text-align: center; padding: 40px 20px; }
 </style>
 </head>
 <body>
@@ -224,33 +271,173 @@ react/cjs/react-jsx-runtime.production.js:
     reader.readAsText(file);
   }
 
+  /* ---------- Personal records & estimated 1RM ---------- */
+  var EX_NAMES = {
+    bench: "לחיצת חזה", latpd: "מתח / Lat Pulldown", ohp: "לחיצת כתפיים",
+    row: "חתירה בישיבה", fly: "פרפר חזה", facepull: "Face Pull",
+    latraise: "הרחקת כתפיים", triceps: "פשיטת מרפקים", curl: "כפיפת מרפקים במוט",
+    hammer: "כפיפת פטישים", squat: "סקוואט", rdl: "דדליפט רומני",
+    legpress: "לחיצת רגליים", hamcurl: "כפיפת ברכיים", calf: "הרמות עקב",
+    plank: "פלאנק", crunch: "Crunch", legraise: "הרמות רגליים"
+  };
+  function epley(w, r) { return w * (1 + r / 30); } // Estimated 1RM
+  function fmtDate(iso) {
+    var d = new Date(iso);
+    return String(d.getDate()).padStart(2, "0") + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + d.getFullYear();
+  }
+  function computeRecords() {
+    var raw = localStorage.getItem("gym-tracker-v2");
+    if (!raw) return [];
+    var state;
+    try { state = JSON.parse(raw); } catch (e) { return []; }
+    var logs = (state && state.logs) || [];
+    var best = {}; // exId -> {orm, w, r, date}
+    logs.forEach(function (log) {
+      var prog = log && log.prog;
+      if (!prog) return;
+      Object.keys(prog).forEach(function (exId) {
+        var sets = prog[exId];
+        if (!Array.isArray(sets)) return;
+        sets.forEach(function (s) {
+          if (!s || !s.done) return;
+          var w = +s.w || 0, r = +s.r || 0;
+          if (w <= 0 || r <= 0) return;
+          var orm = epley(w, r);
+          if (!best[exId] || orm > best[exId].orm) {
+            best[exId] = { orm: orm, w: w, r: r, date: log.date };
+          }
+        });
+      });
+    });
+    return Object.keys(best).map(function (id) {
+      return { id: id, name: EX_NAMES[id] || id, rec: best[id] };
+    }).sort(function (a, b) { return b.rec.orm - a.rec.orm; });
+  }
+
+  /* ---------- Rest timer (independent, full-screen) ---------- */
+  var timerOv, ringFg, timeB, timeSpan, RING_LEN, tState = null, tRAF = null, audioCtx = null;
+  function beep() {
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      [0, 0.25].forEach(function (off) {
+        var o = audioCtx.createOscillator(), g = audioCtx.createGain();
+        o.type = "sine"; o.frequency.value = 880;
+        o.connect(g); g.connect(audioCtx.destination);
+        var t0 = audioCtx.currentTime + off;
+        g.gain.setValueAtTime(0.001, t0);
+        g.gain.exponentialRampToValueAtTime(0.4, t0 + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.18);
+        o.start(t0); o.stop(t0 + 0.2);
+      });
+    } catch (e) { /* audio not available */ }
+    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+  }
+  function tickRender() {
+    if (!tState) return;
+    var now = Date.now();
+    var remain = Math.round((tState.endAt - now) / 1000);
+    var over = remain < 0;
+    var disp = Math.abs(remain);
+    timeB.textContent = (over ? "+" : "") + Math.floor(disp / 60) + ":" + String(disp % 60).padStart(2, "0");
+    timeSpan.textContent = over ? "מעבר ליעד" : "מנוחה";
+    var frac = Math.max(0, Math.min(1, remain / tState.total));
+    ringFg.style.strokeDashoffset = RING_LEN * (1 - frac);
+    ringFg.classList.toggle("over", over);
+    if (over && !tState.fired) { tState.fired = true; beep(); }
+    tRAF = requestAnimationFrame(tickRender);
+  }
+  function startTimer(sec) {
+    tState = { total: sec, endAt: Date.now() + sec * 1000, fired: false };
+    cancelAnimationFrame(tRAF);
+    tickRender();
+  }
+  function adjustTimer(delta) {
+    if (!tState) return;
+    tState.endAt += delta * 1000;
+    tState.total = Math.max(tState.total + delta, 5);
+    tState.fired = false;
+  }
+  function stopTimer() { cancelAnimationFrame(tRAF); tState = null; }
+  function openTimer() {
+    timerOv.classList.add("open");
+    var def = 90;
+    try { var st = JSON.parse(localStorage.getItem("gym-tracker-v2") || "{}"); if (st.settings && st.settings.restSec) def = st.settings.restSec; } catch (e) {}
+    startTimer(def);
+  }
+  function closeTimer() { timerOv.classList.remove("open"); stopTimer(); }
+
   /* ---------- UI ---------- */
   function build() {
     var fab = document.createElement("button");
     fab.id = "wt-fab";
     fab.type = "button";
-    fab.setAttribute("aria-label", "גיבוי והגדרות");
+    fab.setAttribute("aria-label", "כלים והגדרות");
     fab.textContent = "⚙";
 
     var panel = document.createElement("div");
     panel.id = "wt-panel";
     panel.innerHTML =
-      '<h4>גיבוי והגדרות</h4>' +
+      '<h4>כלים והגדרות</h4>' +
       '<div class="wt-row"><span>מצב כהה</span>' +
         '<label class="wt-switch"><input type="checkbox" id="wt-dark-toggle">' +
         '<span class="wt-slider"></span></label></div>' +
+      '<button class="wt-btn" id="wt-records">🏆 שיאים אישיים</button>' +
+      '<button class="wt-btn" id="wt-rest">⏱ טיימר מנוחה</button>' +
       '<button class="wt-btn" id="wt-export">⬇ ייצוא גיבוי</button>' +
       '<button class="wt-btn" id="wt-import">⬆ שחזור גיבוי</button>' +
       '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">';
 
+    /* Rest timer overlay */
+    timerOv = document.createElement("div");
+    timerOv.id = "wt-timer";
+    timerOv.className = "wt-overlay";
+    var R = 105; RING_LEN = 2 * Math.PI * R;
+    timerOv.innerHTML =
+      '<button class="wt-close" id="wt-timer-close" aria-label="סגור">✕</button>' +
+      '<h2>טיימר מנוחה</h2>' +
+      '<div class="wt-ring-wrap">' +
+        '<svg width="240" height="240" viewBox="0 0 240 240">' +
+          '<circle class="wt-ring-bg" cx="120" cy="120" r="' + R + '"></circle>' +
+          '<circle class="wt-ring-fg" cx="120" cy="120" r="' + R + '" ' +
+            'stroke-dasharray="' + RING_LEN + '" stroke-dashoffset="0"></circle>' +
+        '</svg>' +
+        '<div class="wt-time"><b id="wt-time-b">0:00</b><span id="wt-time-s">מנוחה</span></div>' +
+      '</div>' +
+      '<div class="wt-presets">' +
+        '<button class="wt-chip" data-sec="60">60ש׳</button>' +
+        '<button class="wt-chip" data-sec="90">90ש׳</button>' +
+        '<button class="wt-chip" data-sec="120">120ש׳</button>' +
+      '</div>' +
+      '<div class="wt-tcontrols">' +
+        '<button class="wt-chip" id="wt-minus">−15ש׳</button>' +
+        '<button class="wt-chip" id="wt-plus">+15ש׳</button>' +
+        '<button class="wt-chip primary" id="wt-restart">התחל מחדש</button>' +
+      '</div>';
+
+    /* Records overlay */
+    var recOv = document.createElement("div");
+    recOv.id = "wt-records-ov";
+    recOv.className = "wt-overlay";
+    recOv.innerHTML =
+      '<button class="wt-close" id="wt-rec-close" aria-label="סגור">✕</button>' +
+      '<h2>🏆 שיאים אישיים</h2>' +
+      '<div class="wt-rec-list" id="wt-rec-list"></div>';
+
     document.body.appendChild(fab);
     document.body.appendChild(panel);
+    document.body.appendChild(timerOv);
+    document.body.appendChild(recOv);
+
+    ringFg = timerOv.querySelector(".wt-ring-fg");
+    timeB = timerOv.querySelector("#wt-time-b");
+    timeSpan = timerOv.querySelector("#wt-time-s");
 
     fab.addEventListener("click", function () { panel.classList.toggle("open"); });
     document.addEventListener("click", function (e) {
       if (!panel.contains(e.target) && e.target !== fab) panel.classList.remove("open");
     });
 
+    /* Dark mode */
     var darkToggle = panel.querySelector("#wt-dark-toggle");
     darkToggle.checked = darkOn;
     darkToggle.addEventListener("change", function () {
@@ -259,6 +446,7 @@ react/cjs/react-jsx-runtime.production.js:
       applyDark(darkOn);
     });
 
+    /* Backup */
     panel.querySelector("#wt-export").addEventListener("click", exportData);
     var fileInput = panel.querySelector("#wt-file");
     panel.querySelector("#wt-import").addEventListener("click", function () { fileInput.click(); });
@@ -266,7 +454,57 @@ react/cjs/react-jsx-runtime.production.js:
       if (fileInput.files && fileInput.files[0]) importData(fileInput.files[0]);
       fileInput.value = "";
     });
+
+    /* Rest timer wiring */
+    panel.querySelector("#wt-rest").addEventListener("click", function () { panel.classList.remove("open"); openTimer(); });
+    timerOv.querySelector("#wt-timer-close").addEventListener("click", closeTimer);
+    timerOv.querySelectorAll(".wt-presets .wt-chip").forEach(function (btn) {
+      btn.addEventListener("click", function () { startTimer(+btn.getAttribute("data-sec")); });
+    });
+    timerOv.querySelector("#wt-minus").addEventListener("click", function () { adjustTimer(-15); });
+    timerOv.querySelector("#wt-plus").addEventListener("click", function () { adjustTimer(15); });
+    timerOv.querySelector("#wt-restart").addEventListener("click", function () { startTimer(tState ? tState.total : 90); });
+
+    /* Records wiring */
+    panel.querySelector("#wt-records").addEventListener("click", function () {
+      panel.classList.remove("open");
+      var list = recOv.querySelector("#wt-rec-list");
+      var recs = computeRecords();
+      if (!recs.length) {
+        list.innerHTML = '<div class="wt-empty">עדיין אין נתוני אימון.<br>השלם אימון והשיאים יופיעו כאן 💪</div>';
+      } else {
+        list.innerHTML = recs.map(function (x) {
+          return '<div class="wt-rec"><div><div class="nm">' + x.name + '</div>' +
+            '<div class="sub">' + x.rec.w + ' ק״ג × ' + x.rec.r + ' · ' + fmtDate(x.rec.date) + '</div></div>' +
+            '<div class="orm">' + Math.round(x.rec.orm) + '<small> ק״ג 1RM</small></div></div>';
+        }).join("");
+      }
+      recOv.classList.add("open");
+    });
+    recOv.querySelector("#wt-rec-close").addEventListener("click", function () { recOv.classList.remove("open"); });
+
+    /* Close overlays with Escape */
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") { closeTimer(); recOv.classList.remove("open"); }
+    });
   }
+
+  /* ---------- PWA: offline support + installable ---------- */
+  function initPWA() {
+    if (location.protocol !== "http:" && location.protocol !== "https:") return; // SW needs http(s)
+    if (!document.querySelector('link[rel="manifest"]')) {
+      var link = document.createElement("link");
+      link.rel = "manifest";
+      link.href = "manifest.json";
+      document.head.appendChild(link);
+    }
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("sw.js").catch(function () { /* offline support unavailable */ });
+      });
+    }
+  }
+  initPWA();
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", build);

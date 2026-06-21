@@ -1,0 +1,21 @@
+{
+  "name": "מערכת אימון A/B",
+  "short_name": "אימון A/B",
+  "description": "מעקב אימוני כוח A/B — סטים, משקלים, מנוחה, שיאים והתקדמות",
+  "lang": "he",
+  "dir": "rtl",
+  "start_url": "workout-tracker.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#E7E5E0",
+  "theme_color": "#E7E5E0",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%232F3033'/%3E%3Cg fill='none' stroke='%236AA84F' stroke-width='34' stroke-linecap='round'%3E%3Cline x1='256' y1='200' x2='256' y2='312'/%3E%3Cline x1='150' y1='160' x2='150' y2='352'/%3E%3Cline x1='362' y1='160' x2='362' y2='352'/%3E%3Cline x1='104' y1='200' x2='104' y2='312'/%3E%3Cline x1='408' y1='200' x2='408' y2='312'/%3E%3Cline x1='150' y1='256' x2='362' y2='256'/%3E%3C/g%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
