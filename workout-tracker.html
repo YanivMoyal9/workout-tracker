@@ -660,9 +660,13 @@ react/cjs/react-jsx-runtime.production.js:
     installNavHook();
   }
 
-  /* ---------- PWA: offline support + installable ---------- */
+  /* ---------- PWA: installable manifest (no service worker) ----------
+     Earlier versions registered a cache-first service worker that pinned a
+     stale copy of the app. We no longer register one, and we proactively
+     remove any previously installed worker and its caches so clients always
+     get the live version. sw.js is now a self-unregistering kill switch. */
   function initPWA() {
-    if (location.protocol !== "http:" && location.protocol !== "https:") return; // SW needs http(s)
+    if (location.protocol !== "http:" && location.protocol !== "https:") return;
     if (!document.querySelector('link[rel="manifest"]')) {
       var link = document.createElement("link");
       link.rel = "manifest";
@@ -670,9 +674,14 @@ react/cjs/react-jsx-runtime.production.js:
       document.head.appendChild(link);
     }
     if ("serviceWorker" in navigator) {
-      window.addEventListener("load", function () {
-        navigator.serviceWorker.register("sw.js").catch(function () { /* offline support unavailable */ });
-      });
+      navigator.serviceWorker.getRegistrations().then(function (regs) {
+        regs.forEach(function (r) { r.unregister(); });
+      }).catch(function () {});
+    }
+    if (window.caches && caches.keys) {
+      caches.keys().then(function (keys) {
+        keys.forEach(function (k) { caches.delete(k); });
+      }).catch(function () {});
     }
   }
   initPWA();
