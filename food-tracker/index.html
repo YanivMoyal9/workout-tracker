@@ -579,43 +579,71 @@ function renderAddSheet(){
     ${body}`;
 }
 function barcodePanel(){
-  const supported = ("BarcodeDetector" in window);
   return `<div class="card center">
-      ${supported
-        ? `<video id="bcvid" playsinline muted style="width:100%;max-height:240px;border-radius:12px;background:#000;object-fit:cover"></video>
-           <div class="muted sm" id="bcstatus" style="margin-top:8px">כוון את המצלמה אל הברקוד...</div>`
-        : `<div style="font-size:40px">📊</div><div class="muted sm" style="margin:8px 0">הדפדפן שלך לא תומך בסריקה אוטומטית — הזן את מספר הברקוד ידנית.</div>`}
+      <video id="bcvid" playsinline muted autoplay style="width:100%;max-height:240px;border-radius:12px;background:#000;object-fit:cover"></video>
+      <div class="muted sm" id="bcstatus" style="margin-top:8px">מפעיל מצלמה...</div>
     </div>
     <div class="card">
-      <label>מספר ברקוד</label>
+      <label>אין מצלמה? הזן מספר ברקוד ידנית</label>
       <input id="bcnum" inputmode="numeric" placeholder="לדוגמה: 7290000000000">
-      <button class="btn" style="margin-top:10px" onclick="lookupBarcode(document.getElementById('bcnum').value)">🔍 חפש מוצר</button>
+      <button class="btn sec" style="margin-top:10px" onclick="lookupBarcode(document.getElementById('bcnum').value)">🔍 חפש מוצר</button>
       <p class="xs muted" style="margin-top:8px">הנתונים מגיעים ממאגר Open Food Facts הפתוח. ייתכן שמוצרים מקומיים לא יימצאו.</p>
     </div>`;
 }
-let _bcStream=null, _bcRAF=null;
+let _bcStream=null, _bcRAF=null, _zxReader=null;
+function loadZXing(){
+  return new Promise((res,rej)=>{
+    if(window.ZXing) return res();
+    const s=document.createElement("script");
+    s.src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js";
+    s.onload=()=>res(); s.onerror=()=>rej(new Error("zxing load failed"));
+    document.head.appendChild(s);
+  });
+}
 async function startScanner(){
   stopScanner();
-  if(!("BarcodeDetector" in window)) return;
-  try {
-    const det=new window.BarcodeDetector({formats:["ean_13","ean_8","upc_a","upc_e","code_128"]});
-    _bcStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}});
-    const v=document.getElementById("bcvid"); if(!v){ stopScanner(); return; }
-    v.srcObject=_bcStream; await v.play();
-    const tick=async()=>{
-      const vid=document.getElementById("bcvid");
-      if(!vid||!_bcStream){ stopScanner(); return; }
-      try { const codes=await det.detect(vid); if(codes&&codes.length){ stopScanner(); lookupBarcode(codes[0].rawValue); return; } } catch(_){}
+  const st=()=>document.getElementById("bcstatus");
+  // Path 1: native BarcodeDetector (Android Chrome etc.)
+  if("BarcodeDetector" in window){
+    try {
+      const det=new window.BarcodeDetector({formats:["ean_13","ean_8","upc_a","upc_e","code_128"]});
+      _bcStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}});
+      const v=document.getElementById("bcvid"); if(!v){ stopScanner(); return; }
+      v.srcObject=_bcStream; await v.play();
+      if(st()) st().textContent="כוון את המצלמה אל הברקוד...";
+      const tick=async()=>{
+        const vid=document.getElementById("bcvid");
+        if(!vid||!_bcStream){ stopScanner(); return; }
+        try { const codes=await det.detect(vid); if(codes&&codes.length){ stopScanner(); lookupBarcode(codes[0].rawValue); return; } } catch(_){}
+        _bcRAF=requestAnimationFrame(tick);
+      };
       _bcRAF=requestAnimationFrame(tick);
+      return;
+    } catch(e){ /* fall through to ZXing */ stopScanner(); }
+  }
+  // Path 2: ZXing fallback (iOS Safari, and as backup)
+  try {
+    if(st()) st().textContent="טוען סורק...";
+    await loadZXing();
+    if(!document.getElementById("bcvid")){ stopScanner(); return; }
+    _zxReader=new window.ZXing.BrowserMultiFormatReader();
+    if(st()) st().textContent="כוון את המצלמה אל הברקוד...";
+    const onResult=(result,err)=>{
+      if(result){ const txt=result.getText(); stopScanner(); lookupBarcode(txt); }
     };
-    _bcRAF=requestAnimationFrame(tick);
+    if(typeof _zxReader.decodeFromConstraints==="function"){
+      await _zxReader.decodeFromConstraints({video:{facingMode:"environment"}}, "bcvid", onResult);
+    } else {
+      await _zxReader.decodeFromVideoDevice(undefined, "bcvid", onResult);
+    }
   } catch(e){
-    const st=document.getElementById("bcstatus"); if(st) st.textContent="אין גישה למצלמה — הזן ברקוד ידנית";
+    if(st()) st().textContent="אין גישה למצלמה — הזן ברקוד ידנית למטה";
   }
 }
 function stopScanner(){
   if(_bcRAF){ cancelAnimationFrame(_bcRAF); _bcRAF=null; }
   if(_bcStream){ _bcStream.getTracks().forEach(t=>t.stop()); _bcStream=null; }
+  if(_zxReader){ try{ _zxReader.reset(); }catch(_){} _zxReader=null; }
 }
 async function lookupBarcode(code){
   code=(code||"").trim().replace(/\D/g,"");
