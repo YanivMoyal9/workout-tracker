@@ -1,0 +1,21 @@
+{
+  "name": "תזונה חכמה — מעקב משקל וקלוריות",
+  "short_name": "תזונה חכמה",
+  "description": "מעקב משקל, קלוריות ומאקרו עם זיהוי אוכל מתמונה בעזרת בינה מלאכותית",
+  "lang": "he",
+  "dir": "rtl",
+  "start_url": "index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#E7E5E0",
+  "theme_color": "#E7E5E0",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%232F3033'/%3E%3Cg fill='none' stroke='%236AA84F' stroke-width='28' stroke-linecap='round'%3E%3Ccircle cx='256' cy='264' r='150'/%3E%3Cpath d='M256 264 L256 150' /%3E%3Cpath d='M256 264 L350 320'/%3E%3C/g%3E%3Ccircle cx='256' cy='264' r='20' fill='%236AA84F'/%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#E7E5E0" />
+<title>תזונה חכמה — מעקב משקל וקלוריות</title>
+<link rel="manifest" href="manifest.json" />
+<style>
+  :root {
+    --bg: #E7E5E0;
+    --card: #FBFAF8;
+    --ink: #2F3033;
+    --muted: #7C7F85;
+    --green: #6AA84F;
+    --green-d: #588B41;
+    --orange: #D9744F;
+    --blue: #4F86D9;
+    --line: rgba(0,0,0,.07);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+  body { padding-bottom: calc(78px + env(safe-area-inset-bottom)); }
+  html.dark { --bg:#14130F; --card:#1F1E1B; --ink:#E9E9EC; --muted:#9A9DA3; --line:rgba(255,255,255,.09); }
+
+  #app { max-width: 560px; margin: 0 auto; padding: 14px 14px 0; }
+  h1 { font-size: 20px; font-weight: 800; margin: 8px 2px 2px; }
+  h2 { font-size: 16px; font-weight: 800; margin: 18px 2px 8px; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 2px 12px; }
+
+  .card { background: var(--card); border-radius: 16px; padding: 16px; margin: 10px 0;
+    box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .between { justify-content: space-between; }
+  .grow { flex: 1; }
+  .muted { color: var(--muted); }
+  .sm { font-size: 13px; }
+  .xs { font-size: 11px; }
+  .b { font-weight: 700; }
+  .center { text-align: center; }
+
+  label { display: block; font-size: 13px; font-weight: 600; margin: 12px 2px 5px; color: var(--ink); }
+  input, select {
+    width: 100%; padding: 12px 13px; border: 1px solid var(--line); border-radius: 11px;
+    background: var(--bg); color: var(--ink); font-size: 15px; font-family: inherit;
+  }
+  input:focus, select:focus { outline: 2px solid var(--green); border-color: transparent; }
+  .field2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  button { font-family: inherit; cursor: pointer; border: none; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; padding: 14px; border-radius: 12px; font-size: 15px; font-weight: 700;
+    background: var(--green); color: #fff; transition: transform .1s, opacity .15s; }
+  .btn:active { transform: scale(.97); }
+  .btn.sec { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+  .btn.ghost { background: transparent; color: var(--green); }
+  .btn.danger { background: transparent; color: var(--orange); border: 1px solid var(--line); }
+  .btn[disabled] { opacity: .5; pointer-events: none; }
+  .chip { padding: 8px 14px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line);
+    font-size: 14px; font-weight: 600; color: var(--ink); }
+  .chip.on { background: var(--green); color: #fff; border-color: var(--green); }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  /* Ring */
+  .ring-wrap { position: relative; width: 180px; height: 180px; margin: 6px auto 4px; }
+  .ring-wrap svg { transform: rotate(-90deg); }
+  .ring-bg { fill: none; stroke: var(--line); stroke-width: 16; }
+  .ring-fg { fill: none; stroke: var(--green); stroke-width: 16; stroke-linecap: round;
+    transition: stroke-dashoffset .5s ease; }
+  .ring-fg.over { stroke: var(--orange); }
+  .ring-mid { position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; }
+  .ring-mid b { font-size: 38px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+  .ring-mid span { font-size: 12px; color: var(--muted); margin-top: 5px; }
+
+  .macros { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-top: 6px; }
+  .macro { background: var(--bg); border-radius: 12px; padding: 10px; text-align: center; }
+  .macro b { font-size: 17px; font-weight: 800; }
+  .macro .bar { height: 5px; border-radius: 3px; background: var(--line); margin: 7px 0 4px; overflow: hidden; }
+  .macro .bar i { display: block; height: 100%; border-radius: 3px; }
+
+  .item { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--line); }
+  .item:last-child { border-bottom: none; }
+  .item .em { font-size: 22px; width: 30px; text-align: center; }
+  .item .nm { font-weight: 700; font-size: 14px; }
+  .item .meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .item .kc { font-weight: 800; white-space: nowrap; }
+  .item .x { color: var(--muted); font-size: 20px; padding: 4px 6px; background: none; }
+
+  .seg { display: flex; background: var(--bg); border-radius: 12px; padding: 4px; gap: 4px; margin: 6px 0 4px; }
+  .seg button { flex: 1; padding: 10px; border-radius: 9px; font-size: 14px; font-weight: 700;
+    background: transparent; color: var(--muted); }
+  .seg button.on { background: var(--card); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+
+  .empty { text-align: center; color: var(--muted); padding: 30px 12px; font-size: 14px; }
+  .pill { display:inline-block; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+  .pill.high { background: rgba(106,168,79,.16); color: var(--green-d); }
+  .pill.medium { background: rgba(217,134,79,.16); color: var(--orange); }
+  .pill.low { background: rgba(124,127,133,.18); color: var(--muted); }
+
+  /* bottom nav */
+  nav { position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
+    background: color-mix(in srgb, var(--card) 86%, transparent);
+    -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+    border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
+  nav .inner { max-width: 560px; margin: 0 auto; display: flex; padding: 7px 6px; }
+  nav button { flex: 1; background: none; display: flex; flex-direction: column; align-items: center;
+    gap: 3px; padding: 6px 0; color: var(--muted); border-radius: 14px; transition: color .15s; }
+  nav button .ic { font-size: 21px; }
+  nav button span { font-size: 11px; font-weight: 700; }
+  nav button.on { color: var(--green); }
+  nav button.fab { color: #fff; }
+  nav .fabwrap { flex: 1; display: flex; justify-content: center; }
+  nav .fab-b { width: 54px; height: 54px; border-radius: 50%; background: var(--green); color: #fff;
+    display: flex; align-items: center; justify-content: center; font-size: 28px; margin-top: -22px;
+    box-shadow: 0 6px 18px rgba(106,168,79,.45); }
+
+  /* sheet / modal */
+  .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 80; display: none;
+    align-items: flex-end; justify-content: center; }
+  .scrim.open { display: flex; animation: fade .2s; }
+  @keyframes fade { from { opacity: 0; } }
+  .sheet { background: var(--bg); width: 100%; max-width: 560px; border-radius: 22px 22px 0 0;
+    padding: 8px 16px calc(20px + env(safe-area-inset-bottom)); max-height: 90vh; overflow-y: auto;
+    animation: up .25s cubic-bezier(.2,.8,.2,1); }
+  @keyframes up { from { transform: translateY(40px); } }
+  .handle { width: 40px; height: 4px; background: var(--line); border-radius: 3px; margin: 8px auto 12px; }
+
+  .toast { position: fixed; bottom: 92px; left: 50%; transform: translateX(-50%);
+    background: var(--ink); color: var(--bg); padding: 11px 18px; border-radius: 12px; font-size: 14px;
+    z-index: 200; opacity: 0; transition: opacity .25s, transform .25s; pointer-events: none; font-weight: 600; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
+
+  .spin { width: 20px; height: 20px; border: 3px solid rgba(255,255,255,.4); border-top-color: #fff;
+    border-radius: 50%; animation: rot 0.8s linear infinite; }
+  @keyframes rot { to { transform: rotate(360deg); } }
+
+  .barline { height: 8px; border-radius: 5px; background: var(--line); overflow: hidden; margin: 8px 0; }
+  .barline i { display: block; height: 100%; background: var(--green); border-radius: 5px; }
+
+  canvas { width: 100%; display: block; }
+  a { color: var(--green-d); }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<nav>
+  <div class="inner" id="nav"></div>
+</nav>
+
+<div class="scrim" id="scrim"><div class="sheet" id="sheet"></div></div>
+<div class="toast" id="toast"></div>
+<input type="file" id="filein" accept="image/*" capture="environment" style="display:none" />
+
+<script>
+/* ============================ Data layer ============================ */
+const KEY = "ft_data_v1";
+const todayISO = () => new Date().toISOString().slice(0,10);
+const uid = () => Math.random().toString(36).slice(2,9);
+
+const DEFAULT = {
+  profile: null,                 // {gender,age,height,weight,goalWeight,activity,rate}
+  targets: null,                 // {cal,p,c,f}
+  log: {},                       // { "YYYY-MM-DD": [items] }
+  weights: [],                   // [{date,kg}]
+  settings: { apiKey:"", dark:false, model:"claude-opus-4-8" },
+  tab: "home",
+  viewDate: todayISO()
+};
+
+let S = load();
+function load(){
+  try { const d = JSON.parse(localStorage.getItem(KEY)); if(d) return Object.assign({}, DEFAULT, d, {tab:"home", viewDate:todayISO()}); }
+  catch(e){}
+  return JSON.parse(JSON.stringify(DEFAULT));
+}
+function save(){ localStorage.setItem(KEY, JSON.stringify(S)); }
+
+/* ============================ Nutrition math ============================ */
+// Mifflin-St Jeor
+function bmr(p){
+  const base = 10*p.weight + 6.25*p.height - 5*p.age;
+  return Math.round(p.gender==="m" ? base+5 : base-161);
+}
+const ACT = { sed:1.2, light:1.375, mod:1.55, high:1.725, athlete:1.9 };
+function tdee(p){ return Math.round(bmr(p) * (ACT[p.activity]||1.2)); }
+function computeTargets(p){
+  const t = tdee(p);
+  const deficit = Math.round((p.rate||0.5) * 7700 / 7); // kcal/day for kg/week
+  let cal = t - deficit;
+  cal = Math.max(cal, p.gender==="m" ? 1500 : 1200); // safety floor
+  // protein 2g per kg target-ish, fat 25% of cal, rest carbs
+  const prot = Math.round(p.weight * 1.8);
+  const fat = Math.round(cal * 0.27 / 9);
+  const carbs = Math.max(0, Math.round((cal - prot*4 - fat*9)/4));
+  return { cal: Math.round(cal), p: prot, c: carbs, f: fat, tdee: t };
+}
+function bmi(p){ const m=p.height/100; return +(p.weight/(m*m)).toFixed(1); }
+function bmiCat(v){ return v<18.5?"תת־משקל":v<25?"תקין":v<30?"עודף משקל":"השמנה"; }
+
+/* ============================ Built-in food DB (per 100g) ============================ */
+const DB = [
+  ["חזה עוף בגריל","🍗",165,31,0,3.6],
+  ["ביצה","🥚",155,13,1.1,11],
+  ["אורז לבן מבושל","🍚",130,2.7,28,0.3],
+  ["פסטה מבושלת","🍝",131,5,25,1.1],
+  ["לחם מלא","🍞",247,13,41,3.4],
+  ["פיתה","🫓",275,9,55,1.2],
+  ["אבוקדו","🥑",160,2,9,15],
+  ["בננה","🍌",89,1.1,23,0.3],
+  ["תפוח","🍎",52,0.3,14,0.2],
+  ["גבינה צהובה","🧀",350,25,1.3,27],
+  ["קוטג' 5%","🥛",98,11,3.4,5],
+  ["יוגורט יווני","🥣",59,10,3.6,0.4],
+  ["טונה במים","🐟",116,26,0,1],
+  ["סלמון","🐟",208,20,0,13],
+  ["בשר בקר טחון","🥩",250,26,0,17],
+  ["תפוח אדמה אפוי","🥔",93,2.5,21,0.1],
+  ["בטטה","🍠",86,1.6,20,0.1],
+  ["עדשים מבושלות","🫘",116,9,20,0.4],
+  ["חומוס","🧆",166,8,27,6],
+  ["טחינה","🥄",595,17,21,53],
+  ["שקדים","🌰",579,21,22,50],
+  ["חלב 3%","🥛",60,3.3,4.7,3],
+  ["שוקולד מריר","🍫",546,5,61,31],
+  ["סלט ירקות","🥗",30,1.3,5,0.2],
+  ["מלפפון","🥒",15,0.7,3.6,0.1],
+  ["עגבנייה","🍅",18,0.9,3.9,0.2],
+  ["פיצה","🍕",266,11,33,10],
+  ["המבורגר","🍔",295,17,24,14],
+  ["שניצל","🍗",290,18,15,18],
+  ["במבה","🥜",520,13,50,30],
+  ["קולה","🥤",42,0,10.6,0],
+  ["בירה","🍺",43,0.5,3.6,0],
+  ["שמן זית","🫒",884,0,0,100],
+  ["אורז מלא","🍚",112,2.6,24,0.9],
+  ["קינואה מבושלת","🍚",120,4.4,21,1.9],
+  ["גזר","🥕",41,0.9,10,0.2],
+  ["ברוקולי","🥦",34,2.8,7,0.4],
+  ["תירס","🌽",96,3.4,21,1.5],
+  ["דגני בוקר","🥣",379,7,84,4],
+  ["קפה עם חלב","☕",30,1.6,3,1],
+];
+
+/* ============================ helpers ============================ */
+function todayItems(d){ return S.log[d || S.viewDate] || []; }
+function sumDay(d){
+  const arr = todayItems(d); const t={cal:0,p:0,c:0,f:0};
+  arr.forEach(i=>{ t.cal+=i.calories||0; t.p+=i.protein||0; t.c+=i.carbs||0; t.f+=i.fat||0; });
+  Object.keys(t).forEach(k=>t[k]=Math.round(t[k]));
+  return t;
+}
+function toast(msg){
+  const t=document.getElementById("toast"); t.textContent=msg; t.classList.add("show");
+  clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove("show"),1900);
+}
+function fmtDate(iso){
+  const d=new Date(iso+"T00:00:00"); const t=todayISO();
+  if(iso===t) return "היום";
+  const y=new Date(Date.now()-86400000).toISOString().slice(0,10);
+  if(iso===y) return "אתמול";
+  return d.toLocaleDateString("he-IL",{weekday:"short",day:"numeric",month:"numeric"});
+}
+
+/* ============================ Render ============================ */
+const app = () => document.getElementById("app");
+function render(){
+  document.documentElement.classList.toggle("dark", !!S.settings.dark);
+  if(!S.profile){ renderOnboard(); renderNav(); return; }
+  ({home:renderHome, weight:renderWeight, history:renderHistory, settings:renderSettings}[S.tab]||renderHome)();
+  renderNav();
+}
+
+function renderNav(){
+  if(!S.profile){ document.getElementById("nav").innerHTML=""; return; }
+  const tab=(id,ic,label)=>`<button class="${S.tab===id?'on':''}" onclick="go('${id}')"><span class="ic">${ic}</span><span>${label}</span></button>`;
+  document.getElementById("nav").innerHTML =
+    tab("home","🏠","היום") + tab("weight","⚖️","משקל") +
+    `<div class="fabwrap"><button class="fab-b" onclick="openAdd()">＋</button></div>` +
+    tab("history","📅","יומן") + tab("settings","⚙️","הגדרות");
+}
+function go(t){ S.tab=t; S.viewDate=todayISO(); save(); render(); window.scrollTo(0,0); }
+
+/* ---------- Onboarding ---------- */
+function renderOnboard(){
+  const p = window._ob || { gender:"m", age:30, height:175, weight:80, goalWeight:75, activity:"light", rate:0.5 };
+  window._ob = p;
+  app().innerHTML = `
+    <h1>👋 ברוך הבא</h1>
+    <p class="sub">נחשב לך יעד קלורי יומי אישי לירידה במשקל. אפשר לשנות הכל בהמשך.</p>
+    <div class="card">
+      <label>מין</label>
+      <div class="seg">
+        <button class="${p.gender==='m'?'on':''}" onclick="ob('gender','m')">גבר</button>
+        <button class="${p.gender==='f'?'on':''}" onclick="ob('gender','f')">אישה</button>
+      </div>
+      <div class="field2">
+        <div><label>גיל</label><input type="number" inputmode="numeric" value="${p.age}" onchange="ob('age',+this.value)"></div>
+        <div><label>גובה (ס״מ)</label><input type="number" inputmode="numeric" value="${p.height}" onchange="ob('height',+this.value)"></div>
+      </div>
+      <div class="field2">
+        <div><label>משקל נוכחי (ק״ג)</label><input type="number" inputmode="decimal" value="${p.weight}" onchange="ob('weight',+this.value)"></div>
+        <div><label>משקל יעד (ק״ג)</label><input type="number" inputmode="decimal" value="${p.goalWeight}" onchange="ob('goalWeight',+this.value)"></div>
+      </div>
+      <label>רמת פעילות</label>
+      <select onchange="ob('activity',this.value)">
+        <option value="sed" ${p.activity==='sed'?'selected':''}>יושבני — מעט מאוד פעילות</option>
+        <option value="light" ${p.activity==='light'?'selected':''}>קל — 1-3 אימונים בשבוע</option>
+        <option value="mod" ${p.activity==='mod'?'selected':''}>בינוני — 3-5 אימונים</option>
+        <option value="high" ${p.activity==='high'?'selected':''}>גבוה — 6-7 אימונים</option>
+        <option value="athlete" ${p.activity==='athlete'?'selected':''}>ספורטאי — פעילות אינטנסיבית</option>
+      </select>
+      <label>קצב ירידה רצוי</label>
+      <div class="chips">
+        ${[["0.25","עדין"],["0.5","מומלץ"],["0.75","מהיר"],["1","אגרסיבי"]].map(([v,l])=>
+          `<button class="chip ${(''+p.rate)===v?'on':''}" onclick="ob('rate',${v})">${v} ק״ג/שבוע · ${l}</button>`).join("")}
+      </div>
+    </div>
+    <div class="card center">
+      ${(()=>{ const t=computeTargets(p); return `
+        <div class="muted sm">היעד היומי המומלץ שלך</div>
+        <div style="font-size:40px;font-weight:800;margin:4px 0">${t.cal} <span style="font-size:16px;font-weight:600" class="muted">קלוריות</span></div>
+        <div class="muted sm">תחזוקה: ${t.tdee} · BMI נוכחי: ${bmi(p)} (${bmiCat(bmi(p))})</div>`;})()}
+    </div>
+    <button class="btn" onclick="finishOnboard()">בוא נתחיל 🚀</button>
+    <div style="height:20px"></div>`;
+}
+function ob(k,v){ window._ob[k]=v; renderOnboard(); }
+function finishOnboard(){
+  const p=window._ob;
+  if(!p.age||!p.height||!p.weight){ toast("נא למלא גיל, גובה ומשקל"); return; }
+  S.profile=p; S.targets=computeTargets(p);
+  if(!S.weights.length) S.weights.push({date:todayISO(), kg:p.weight});
+  save(); render();
+}
+
+/* ---------- Home / today ---------- */
+function renderHome(){
+  const t=S.targets, sum=sumDay(), items=todayItems();
+  const left = t.cal - sum.cal;
+  const pct = Math.min(100, Math.round(sum.cal/t.cal*100));
+  const R=78, C=2*Math.PI*R, off=C*(1-Math.min(1,sum.cal/t.cal));
+  const over = sum.cal>t.cal;
+  const macro=(label,val,goal,color)=>{
+    const w=Math.min(100,Math.round(val/goal*100));
+    return `<div class="macro"><div class="xs muted">${label}</div><b>${val}<span class="xs muted">/${goal}</span></b>
+      <div class="bar"><i style="width:${w}%;background:${color}"></i></div><div class="xs muted">גרם</div></div>`;
+  };
+  app().innerHTML = `
+    <div class="row between" style="margin-top:6px">
+      <button class="chip" onclick="shiftDay(-1)">‹</button>
+      <h1 style="margin:0">${fmtDate(S.viewDate)}</h1>
+      <button class="chip" onclick="shiftDay(1)" ${S.viewDate>=todayISO()?'disabled style=opacity:.3':''}>›</button>
+    </div>
+    <div class="card center">
+      <div class="ring-wrap">
+        <svg width="180" height="180" viewBox="0 0 180 180">
+          <circle class="ring-bg" cx="90" cy="90" r="${R}"></circle>
+          <circle class="ring-fg ${over?'over':''}" cx="90" cy="90" r="${R}"
+            stroke-dasharray="${C}" stroke-dashoffset="${over?0:off}"></circle>
+        </svg>
+        <div class="ring-mid">
+          <b>${Math.abs(left)}</b>
+          <span>${left>=0?'קלוריות נותרו':'מעל היעד'} · ${pct}%</span>
+        </div>
+      </div>
+      <div class="row" style="justify-content:space-around;margin-top:4px">
+        <div class="center"><div class="muted xs">נצרכו</div><div class="b">${sum.cal}</div></div>
+        <div class="center"><div class="muted xs">יעד</div><div class="b">${t.cal}</div></div>
+        <div class="center"><div class="muted xs">נותרו</div><div class="b" style="color:${left<0?'var(--orange)':'var(--green)'}">${left}</div></div>
+      </div>
+      <div class="macros">
+        ${macro("חלבון",sum.p,t.p,"var(--blue)")}
+        ${macro("פחמימה",sum.c,t.c,"var(--green)")}
+        ${macro("שומן",sum.f,t.f,"var(--orange)")}
+      </div>
+    </div>
+
+    <div class="row between"><h2>מה אכלת</h2><button class="btn ghost" style="width:auto;padding:6px 10px" onclick="openAdd()">＋ הוסף</button></div>
+    <div class="card" style="padding:6px 16px">
+      ${items.length? items.map(itemRow).join("") :
+        `<div class="empty">עדיין לא הוספת אוכל היום.<br>הקש על ＋ כדי לצלם או להוסיף מאכל.</div>`}
+    </div>
+
+    ${renderAdvice(left,sum,t)}
+    <div style="height:14px"></div>`;
+}
+function itemRow(i){
+  return `<div class="item">
+    <div class="em">${i.emoji||"🍽️"}</div>
+    <div class="grow"><div class="nm">${esc(i.name)}</div>
+      <div class="meta">${i.grams?i.grams+" גר' · ":""}ח׳ ${Math.round(i.protein||0)} · פ׳ ${Math.round(i.carbs||0)} · ש׳ ${Math.round(i.fat||0)}${i.source==='ai'?' · 📷 AI':''}</div></div>
+    <div class="kc">${i.calories} <span class="xs muted">קל'</span></div>
+    <button class="x" onclick="delItem('${i.id}')">✕</button>
+  </div>`;
+}
+function renderAdvice(left,sum,t){
+  let msg, em;
+  if(sum.cal===0){ return ""; }
+  if(left<0){ em="⚠️"; msg=`עברת את היעד ב־${-left} קלוריות. שווה לשלב הליכה קצרה או לאזן את הארוחה הבאה.`; }
+  else if(left<200){ em="🎯"; msg=`כמעט שם! נשארו ${left} קלוריות — מתאים לחטיף קל כמו יוגורט או פרי.`; }
+  else if(sum.p < t.p*0.5){ em="💪"; msg=`חסר לך חלבון היום (${sum.p}/${t.p} גר'). נסה ביצה, עוף, טונה או יוגורט יווני.`; }
+  else { em="🥗"; msg=`נותרו ${left} קלוריות. כדאי לכוון לחלבון רזה + ירקות כדי להישאר שבע עם פחות קלוריות.`; }
+  return `<div class="card row" style="gap:12px"><div style="font-size:26px">${em}</div><div class="grow sm">${msg}</div></div>`;
+}
+function shiftDay(d){
+  const dt=new Date(S.viewDate+"T00:00:00"); dt.setDate(dt.getDate()+d);
+  const iso=dt.toISOString().slice(0,10);
+  if(iso>todayISO()) return;
+  S.viewDate=iso; render();
+}
+function delItem(id){
+  const arr=todayItems(); const idx=arr.findIndex(x=>x.id===id);
+  if(idx>=0){ arr.splice(idx,1); save(); render(); toast("נמחק"); }
+}
+
+/* ---------- Add food sheet ---------- */
+function openAdd(){
+  window._addTab = window._addTab || "photo";
+  window._aiResult = null;
+  renderAddSheet();
+  openSheet();
+}
+function setAddTab(t){ window._addTab=t; renderAddSheet(); }
+function renderAddSheet(){
+  const tab=window._addTab;
+  const seg=(id,l)=>`<button class="${tab===id?'on':''}" onclick="setAddTab('${id}')">${l}</button>`;
+  let body="";
+  if(tab==="photo") body=photoPanel();
+  else if(tab==="search") body=searchPanel();
+  else body=manualPanel();
+  document.getElementById("sheet").innerHTML = `
+    <div class="handle"></div>
+    <div class="row between"><h2 style="margin:2px">הוספת אוכל</h2></div>
+    <div class="seg">${seg("photo","📷 צילום")}${seg("search","🔍 חיפוש")}${seg("manual","✏️ ידני")}</div>
+    ${body}`;
+}
+function photoPanel(){
+  if(window._aiBusy) return `<div class="card center"><div style="margin:14px"><div class="spin" style="border-color:rgba(106,168,79,.3);border-top-color:var(--green);margin:0 auto 12px"></div>מנתח את התמונה...</div><div class="muted sm">מזהה מאכלים ומחשב קלוריות</div></div>`;
+  if(window._aiResult){
+    const r=window._aiResult;
+    const tot=r.items.reduce((a,i)=>({cal:a.cal+i.calories,p:a.p+i.protein,c:a.c+i.carbs,f:a.f+i.fat}),{cal:0,p:0,c:0,f:0});
+    return `<div class="card" style="padding:8px 16px">
+      ${r.items.map((i,idx)=>`<div class="item">
+        <div class="em">${i.emoji||"🍽️"}</div>
+        <div class="grow"><div class="nm">${esc(i.name)} <span class="pill ${i.confidence}">${({high:"ודאות גבוהה",medium:"בינונית",low:"הערכה"})[i.confidence]||""}</span></div>
+        <div class="meta">~${Math.round(i.grams)} גר' · ח׳ ${Math.round(i.protein)} · פ׳ ${Math.round(i.carbs)} · ש׳ ${Math.round(i.fat)}</div></div>
+        <div class="kc">${Math.round(i.calories)}</div>
+      </div>`).join("")}
+    </div>
+    ${r.note?`<p class="sub" style="margin:4px 2px">📝 ${esc(r.note)}</p>`:""}
+    <div class="card center"><div class="muted sm">סה״כ לארוחה</div><div style="font-size:30px;font-weight:800">${Math.round(tot.cal)} קל'</div>
+      <div class="muted sm">חלבון ${Math.round(tot.p)} · פחמימה ${Math.round(tot.c)} · שומן ${Math.round(tot.f)} גר'</div></div>
+    <button class="btn" onclick="addAiItems()">הוסף ${r.items.length} פריטים ליום</button>
+    <button class="btn sec" style="margin-top:8px" onclick="window._aiResult=null;renderAddSheet()">צלם שוב</button>`;
+  }
+  const hasKey = !!S.settings.apiKey;
+  return `<div class="card center" style="padding:26px 16px">
+      <div style="font-size:46px">📸</div>
+      <div class="b" style="margin:8px 0 4px">צלם את הצלחת</div>
+      <div class="muted sm" style="margin-bottom:14px">הבינה המלאכותית תזהה את המאכלים ותעריך כמה קלוריות, חלבון, פחמימות ושומן הוספת.</div>
+      <button class="btn" onclick="pickPhoto()">📷 צלם או בחר תמונה</button>
+      ${hasKey?"":`<p class="sub" style="margin-top:12px">🔑 כדי להפעיל זיהוי מתמונה צריך מפתח Anthropic API. <a onclick="closeSheet();go('settings')">להוספה בהגדרות ›</a></p>`}
+    </div>`;
+}
+function searchPanel(){
+  const q=(window._q||"").trim();
+  const res = q? DB.filter(f=>f[0].includes(q)).slice(0,12) : DB.slice(0,12);
+  return `<input id="searchin" placeholder="חפש מאכל... (לדוגמה: עוף, אורז)" value="${esc(q)}" oninput="onSearch(this.value)" autofocus>
+    <div class="card" style="padding:4px 16px;margin-top:10px">
+      ${res.length? res.map((f,i)=>`<div class="item" onclick="pickDb(${DB.indexOf(f)})" style="cursor:pointer">
+        <div class="em">${f[1]}</div>
+        <div class="grow"><div class="nm">${esc(f[0])}</div><div class="meta">ל־100 גר': ${f[2]} קל' · ח׳ ${f[3]} · פ׳ ${f[4]} · ש׳ ${f[5]}</div></div>
+        <div style="font-size:22px;color:var(--green)">＋</div></div>`).join("")
+        : `<div class="empty">לא נמצא. נסה להוסיף ידנית.</div>`}
+    </div>`;
+}
+function manualPanel(){
+  const m=window._man||{name:"",grams:100,cal:"",p:"",c:"",f:""};
+  window._man=m;
+  return `<div class="card">
+    <label>שם המאכל</label><input value="${esc(m.name)}" oninput="window._man.name=this.value" placeholder="לדוגמה: כריך טונה">
+    <div class="field2">
+      <div><label>קלוריות</label><input type="number" inputmode="numeric" value="${m.cal}" oninput="window._man.cal=this.value" placeholder="חובה"></div>
+      <div><label>כמות (גרם)</label><input type="number" inputmode="numeric" value="${m.grams}" oninput="window._man.grams=this.value"></div>
+    </div>
+    <div class="field2">
+      <div><label>חלבון (גר')</label><input type="number" inputmode="numeric" value="${m.p}" oninput="window._man.p=this.value"></div>
+      <div><label>פחמימות (גר')</label><input type="number" inputmode="numeric" value="${m.c}" oninput="window._man.c=this.value"></div>
+    </div>
+    <label>שומן (גר')</label><input type="number" inputmode="numeric" value="${m.f}" oninput="window._man.f=this.value">
+  </div>
+  <button class="btn" onclick="addManual()">הוסף ליום</button>`;
+}
+function onSearch(v){ window._q=v;
+  // re-render only the results list without losing focus
+  const sheet=document.getElementById("sheet");
+  const old=sheet.querySelector(".card"); if(!old) return renderAddSheet();
+  const q=v.trim(); const res=q?DB.filter(f=>f[0].includes(q)).slice(0,12):DB.slice(0,12);
+  old.innerHTML = res.length? res.map(f=>`<div class="item" onclick="pickDb(${DB.indexOf(f)})" style="cursor:pointer">
+      <div class="em">${f[1]}</div><div class="grow"><div class="nm">${esc(f[0])}</div>
+      <div class="meta">ל־100 גר': ${f[2]} קל' · ח׳ ${f[3]} · פ׳ ${f[4]} · ש׳ ${f[5]}</div></div>
+      <div style="font-size:22px;color:var(--green)">＋</div></div>`).join("") : `<div class="empty">לא נמצא. נסה להוסיף ידנית.</div>`;
+}
+let _dbPick=null;
+function pickDb(idx){
+  const f=DB[idx];
+  window._gramTarget={ type:"db", f };
+  askGrams(f[0], f[1], 100);
+}
+function askGrams(name, emoji, def){
+  document.getElementById("sheet").innerHTML=`
+    <div class="handle"></div>
+    <h2 style="margin:2px">${emoji} ${esc(name)}</h2>
+    <div class="card"><label>כמה גרם אכלת?</label>
+    <input id="gin" type="number" inputmode="numeric" value="${def}" autofocus>
+    <div class="chips" style="margin-top:10px">
+      ${[50,100,150,200,300].map(g=>`<button class="chip" onclick="document.getElementById('gin').value=${g}">${g}g</button>`).join("")}
+    </div></div>
+    <button class="btn" onclick="confirmGrams()">הוסף</button>
+    <button class="btn sec" style="margin-top:8px" onclick="renderAddSheet()">חזרה</button>`;
+}
+function confirmGrams(){
+  const g=+document.getElementById("gin").value||0;
+  if(g<=0){ toast("נא להזין כמות"); return; }
+  const f=window._gramTarget.f, r=g/100;
+  addItem({ name:f[0], emoji:f[1], grams:g, calories:Math.round(f[2]*r),
+    protein:+(f[3]*r).toFixed(1), carbs:+(f[4]*r).toFixed(1), fat:+(f[5]*r).toFixed(1), source:"db" });
+  closeSheet(); toast("נוסף ✓");
+}
+function addManual(){
+  const m=window._man;
+  if(!m.name||!m.cal){ toast("נא למלא שם וקלוריות"); return; }
+  addItem({ name:m.name, emoji:"🍽️", grams:+m.grams||0, calories:Math.round(+m.cal),
+    protein:+m.p||0, carbs:+m.c||0, fat:+m.f||0, source:"manual" });
+  window._man=null; closeSheet(); toast("נוסף ✓");
+}
+function addItem(it){
+  it.id=uid(); it.time=Date.now();
+  const k=S.viewDate; (S.log[k]=S.log[k]||[]).push(it);
+  save(); render();
+}
+function addAiItems(){
+  const k=S.viewDate; S.log[k]=S.log[k]||[];
+  window._aiResult.items.forEach(i=>S.log[k].push({
+    id:uid(), name:i.name, emoji:i.emoji||"🍽️", grams:Math.round(i.grams),
+    calories:Math.round(i.calories), protein:+(+i.protein).toFixed(1),
+    carbs:+(+i.carbs).toFixed(1), fat:+(+i.fat).toFixed(1), source:"ai", time:Date.now()
+  }));
+  save(); window._aiResult=null; closeSheet(); render(); toast("נוסף ליום ✓");
+}
+
+/* ---------- Photo → AI ---------- */
+function pickPhoto(){
+  const inp=document.getElementById("filein");
+  inp.value="";
+  inp.onchange=()=>{ if(inp.files&&inp.files[0]) handlePhoto(inp.files[0]); };
+  inp.click();
+}
+async function handlePhoto(file){
+  if(!S.settings.apiKey){ toast("נא להוסיף מפתח API בהגדרות"); return; }
+  window._aiBusy=true; renderAddSheet();
+  try {
+    const {b64, media} = await downscale(file);
+    const result = await analyzeFood(b64, media);
+    window._aiResult = result;
+  } catch(e){
+    toast(e.message||"שגיאה בניתוח");
+    console.error(e);
+  } finally {
+    window._aiBusy=false; renderAddSheet();
+  }
+}
+function downscale(file){
+  return new Promise((res,rej)=>{
+    const img=new Image(); const url=URL.createObjectURL(file);
+    img.onload=()=>{
+      const max=1024; let {width:w,height:h}=img;
+      const s=Math.min(1,max/Math.max(w,h)); w=Math.round(w*s); h=Math.round(h*s);
+      const c=document.createElement("canvas"); c.width=w; c.height=h;
+      c.getContext("2d").drawImage(img,0,0,w,h);
+      URL.revokeObjectURL(url);
+      const data=c.toDataURL("image/jpeg",0.82);
+      res({ b64:data.split(",")[1], media:"image/jpeg" });
+    };
+    img.onerror=()=>{ URL.revokeObjectURL(url); rej(new Error("לא ניתן לטעון את התמונה")); };
+    img.src=url;
+  });
+}
+const FOOD_SCHEMA = {
+  type:"object", additionalProperties:false,
+  properties:{
+    items:{ type:"array", items:{
+      type:"object", additionalProperties:false,
+      properties:{
+        name:{type:"string"}, emoji:{type:"string"},
+        grams:{type:"number"}, calories:{type:"number"},
+        protein:{type:"number"}, carbs:{type:"number"}, fat:{type:"number"},
+        confidence:{type:"string", enum:["high","medium","low"]}
+      },
+      required:["name","emoji","grams","calories","protein","carbs","fat","confidence"]
+    }},
+    note:{type:"string"}
+  },
+  required:["items","note"]
+};
+async function analyzeFood(b64, media){
+  const prompt = `אתה תזונאי מומחה. בתמונה מופיע אוכל. זהה כל מאכל/מנה נפרדים בצלחת.
+לכל פריט החזר: שם בעברית, אימוג'י מתאים, הערכת משקל בגרמים, וערכים תזונתיים (קלוריות, חלבון, פחמימות, שומן) למנה כפי שהיא נראית בתמונה (לא ל-100 גרם).
+שדה confidence: high אם ברור, medium אם סביר, low אם ניחוש. בשדה note כתוב משפט קצר בעברית עם טיפ או הסתייגות. אם אין אוכל בתמונה, החזר items ריק והסבר ב-note.`;
+  const resp = await fetch("https://api.anthropic.com/v1/messages",{
+    method:"POST",
+    headers:{
+      "content-type":"application/json",
+      "x-api-key":S.settings.apiKey,
+      "anthropic-version":"2023-06-01",
+      "anthropic-dangerous-direct-browser-access":"true"
+    },
+    body:JSON.stringify({
+      model:S.settings.model||"claude-opus-4-8",
+      max_tokens:1024,
+      messages:[{role:"user",content:[
+        {type:"image",source:{type:"base64",media_type:media,data:b64}},
+        {type:"text",text:prompt}
+      ]}],
+      output_config:{format:{type:"json_schema",schema:FOOD_SCHEMA}}
+    })
+  });
+  if(!resp.ok){
+    let m="שגיאת שרת ("+resp.status+")";
+    try{ const e=await resp.json(); if(e.error&&e.error.message) m=e.error.message; }catch(_){}
+    if(resp.status===401) m="מפתח API שגוי — בדוק בהגדרות";
+    throw new Error(m);
+  }
+  const data=await resp.json();
+  if(data.stop_reason==="refusal") throw new Error("הבקשה נדחתה. נסה תמונה אחרת.");
+  const txt=(data.content.find(b=>b.type==="text")||{}).text||"{}";
+  const parsed=JSON.parse(txt);
+  if(!parsed.items||!parsed.items.length) throw new Error(parsed.note||"לא זוהה אוכל בתמונה");
+  return parsed;
+}
+
+/* ---------- Weight ---------- */
+function renderWeight(){
+  const ws=[...S.weights].sort((a,b)=>a.date<b.date?-1:1);
+  const cur=ws.length?ws[ws.length-1].kg:S.profile.weight;
+  const start=ws.length?ws[0].kg:cur;
+  const goal=S.profile.goalWeight;
+  const lost=+(start-cur).toFixed(1);
+  const toGo=+(cur-goal).toFixed(1);
+  const totalToLose=start-goal;
+  const prog = totalToLose>0? Math.max(0,Math.min(100,Math.round((start-cur)/totalToLose*100))) : 100;
+  const b=bmi({...S.profile,weight:cur});
+  app().innerHTML=`
+    <h1>⚖️ משקל</h1>
+    <div class="card center">
+      <div class="muted sm">משקל נוכחי</div>
+      <div style="font-size:44px;font-weight:800">${cur} <span style="font-size:18px" class="muted">ק״ג</span></div>
+      <div class="muted sm">BMI ${b} · ${bmiCat(b)}</div>
+      <div class="barline" style="margin:14px 0 6px"><i style="width:${prog}%"></i></div>
+      <div class="row between sm"><span class="muted">התחלה ${start}</span><span class="b">${prog}%</span><span class="muted">יעד ${goal}</span></div>
+    </div>
+    <div class="row" style="gap:10px">
+      <div class="card grow center" style="margin:6px 0"><div class="muted xs">ירדת</div><div style="font-size:24px;font-weight:800;color:var(--green)">${lost>0?lost:0}</div><div class="muted xs">ק״ג</div></div>
+      <div class="card grow center" style="margin:6px 0"><div class="muted xs">נשאר ליעד</div><div style="font-size:24px;font-weight:800;color:var(--orange)">${toGo>0?toGo:0}</div><div class="muted xs">ק״ג</div></div>
+    </div>
+    <button class="btn" onclick="openWeight()">＋ רישום שקילה</button>
+    <h2>מגמה</h2>
+    <div class="card">${weightChart(ws,goal)}</div>
+    <div class="card" style="padding:6px 16px">
+      ${ws.slice().reverse().slice(0,12).map((w,i,a)=>{
+        const next=a[i+1]; const diff=next?+(w.kg-next.kg).toFixed(1):0;
+        return `<div class="item"><div class="grow"><div class="nm">${w.kg} ק״ג</div><div class="meta">${fmtDate(w.date)}</div></div>
+          ${next?`<div class="sm b" style="color:${diff<0?'var(--green)':diff>0?'var(--orange)':'var(--muted)'}">${diff>0?'+':''}${diff}</div>`:''}
+          <button class="x" onclick="delWeight('${w.date}')">✕</button></div>`;
+      }).join("") || `<div class="empty">אין רישומים עדיין</div>`}
+    </div>
+    <div style="height:14px"></div>`;
+}
+function weightChart(ws,goal){
+  if(ws.length<2) return `<div class="empty">צריך לפחות 2 שקילות כדי להציג גרף</div>`;
+  const W=520,H=160,pad=24;
+  const xs=ws.map((w,i)=>i), kgs=ws.map(w=>w.kg);
+  const allK=kgs.concat([goal]);
+  let min=Math.min(...allK), max=Math.max(...allK); if(min===max){min-=1;max+=1;}
+  const px=i=> pad + i*(W-2*pad)/(ws.length-1);
+  const py=k=> pad + (max-k)*(H-2*pad)/(max-min);
+  const pts=ws.map((w,i)=>`${px(i)},${py(w.kg)}`).join(" ");
+  const gy=py(goal);
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">
+    <line x1="${pad}" y1="${gy}" x2="${W-pad}" y2="${gy}" stroke="var(--orange)" stroke-width="1.5" stroke-dasharray="5 4"/>
+    <text x="${W-pad}" y="${gy-5}" fill="var(--orange)" font-size="11" text-anchor="end">יעד ${goal}</text>
+    <polyline points="${pts}" fill="none" stroke="var(--green)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+    ${ws.map((w,i)=>`<circle cx="${px(i)}" cy="${py(w.kg)}" r="3.5" fill="var(--green)"/>`).join("")}
+    <text x="${px(0)}" y="${H-6}" fill="var(--muted)" font-size="10" text-anchor="middle">${fmtDate(ws[0].date)}</text>
+    <text x="${px(ws.length-1)}" y="${H-6}" fill="var(--muted)" font-size="10" text-anchor="middle">${fmtDate(ws[ws.length-1].date)}</text>
+  </svg>`;
+}
+function openWeight(){
+  document.getElementById("sheet").innerHTML=`
+    <div class="handle"></div>
+    <h2 style="margin:2px">רישום שקילה</h2>
+    <div class="card"><label>משקל היום (ק״ג)</label>
+      <input id="win" type="number" inputmode="decimal" value="${S.weights.length?S.weights[S.weights.length-1].kg:S.profile.weight}" autofocus>
+      <label>תאריך</label><input id="wdate" type="date" value="${todayISO()}" max="${todayISO()}">
+    </div>
+    <button class="btn" onclick="saveWeight()">שמור</button>`;
+  openSheet();
+}
+function saveWeight(){
+  const kg=+document.getElementById("win").value, date=document.getElementById("wdate").value||todayISO();
+  if(kg<=0){ toast("נא להזין משקל"); return; }
+  const ex=S.weights.find(w=>w.date===date);
+  if(ex) ex.kg=kg; else S.weights.push({date,kg});
+  S.profile.weight=[...S.weights].sort((a,b)=>a.date<b.date?-1:1).slice(-1)[0].kg;
+  S.targets=computeTargets(S.profile);
+  save(); closeSheet(); render(); toast("נשמר ✓");
+}
+function delWeight(date){ S.weights=S.weights.filter(w=>w.date!==date); save(); render(); }
+
+/* ---------- History ---------- */
+function renderHistory(){
+  const days=Object.keys(S.log).filter(k=>S.log[k].length).sort().reverse();
+  const t=S.targets;
+  app().innerHTML=`
+    <h1>📅 יומן</h1>
+    <p class="sub">סיכום צריכה יומית. ירוק = עמדת ביעד.</p>
+    ${days.length? days.map(d=>{
+      const s=sumDay(d); const ok=s.cal<=t.cal;
+      return `<div class="card row between" onclick="S.viewDate='${d}';S.tab='home';save();render()" style="cursor:pointer">
+        <div><div class="b">${fmtDate(d)}</div><div class="muted sm">${S.log[d].length} פריטים · ח׳ ${s.p} · פ׳ ${s.c} · ש׳ ${s.f}</div></div>
+        <div class="center"><div style="font-size:22px;font-weight:800;color:${ok?'var(--green)':'var(--orange)'}">${s.cal}</div><div class="muted xs">/ ${t.cal}</div></div>
+      </div>`;
+    }).join("") : `<div class="empty">אין עדיין היסטוריה. התחל לתעד אוכל!</div>`}
+    ${days.length?`<div class="card center"><div class="muted sm">ממוצע יומי</div><div style="font-size:28px;font-weight:800">${Math.round(days.reduce((a,d)=>a+sumDay(d).cal,0)/days.length)} קל'</div></div>`:""}
+    <div style="height:14px"></div>`;
+}
+
+/* ---------- Settings ---------- */
+function renderSettings(){
+  const p=S.profile, t=S.targets;
+  app().innerHTML=`
+    <h1>⚙️ הגדרות</h1>
+    <h2>היעד היומי שלי</h2>
+    <div class="card row between">
+      <div><div class="b" style="font-size:22px">${t.cal} קל'</div><div class="muted sm">ח׳ ${t.p} · פ׳ ${t.c} · ש׳ ${t.f} גר'</div></div>
+      <div class="muted sm center">תחזוקה<br><span class="b ink">${t.tdee}</span></div>
+    </div>
+    <button class="btn sec" onclick="editProfile()">✏️ עריכת פרטים ויעד</button>
+
+    <h2>זיהוי אוכל מתמונה (AI)</h2>
+    <div class="card">
+      <p class="sub" style="margin:0 0 4px">כדי לזהות קלוריות מצילום, נדרש מפתח Anthropic API. הוא נשמר רק במכשיר שלך.</p>
+      <label>מפתח API</label>
+      <input id="apikey" type="password" placeholder="sk-ant-..." value="${esc(S.settings.apiKey||'')}">
+      <label>מודל</label>
+      <select id="model">
+        <option value="claude-opus-4-8" ${S.settings.model==='claude-opus-4-8'?'selected':''}>Claude Opus 4.8 (מומלץ — מדויק)</option>
+        <option value="claude-sonnet-4-6" ${S.settings.model==='claude-sonnet-4-6'?'selected':''}>Claude Sonnet 4.6 (מהיר וזול יותר)</option>
+      </select>
+      <button class="btn" style="margin-top:12px" onclick="saveKey()">שמור</button>
+      <p class="xs muted" style="margin-top:10px">מפתח אפשר להפיק ב־console.anthropic.com. הקריאה ל־API מתבצעת ישירות מהדפדפן — מתאים לשימוש אישי.</p>
+    </div>
+
+    <h2>תצוגה ונתונים</h2>
+    <div class="card">
+      <div class="row between" style="padding:6px 0"><span class="b">מצב כהה</span>
+        <button class="chip ${S.settings.dark?'on':''}" onclick="toggleDark()">${S.settings.dark?'פעיל':'כבוי'}</button></div>
+      <div class="row" style="gap:10px;margin-top:10px">
+        <button class="btn sec grow" onclick="exportData()">⬇️ ייצוא גיבוי</button>
+        <button class="btn sec grow" onclick="importData()">⬆️ ייבוא</button>
+      </div>
+      <button class="btn danger" style="margin-top:10px" onclick="resetAll()">🗑️ איפוס כל הנתונים</button>
+    </div>
+    <p class="center xs muted" style="margin:16px 0 24px">תזונה חכמה · נבנה עם Claude · נתונים נשמרים מקומית בלבד</p>`;
+}
+function saveKey(){
+  S.settings.apiKey=document.getElementById("apikey").value.trim();
+  S.settings.model=document.getElementById("model").value;
+  save(); toast("נשמר ✓");
+}
+function toggleDark(){ S.settings.dark=!S.settings.dark; save(); render(); }
+function editProfile(){ window._ob={...S.profile}; S.profile=null; save(); render(); window.scrollTo(0,0); }
+function resetAll(){
+  if(confirm("למחוק את כל הנתונים? פעולה זו אינה הפיכה.")){
+    localStorage.removeItem(KEY); S=JSON.parse(JSON.stringify(DEFAULT)); render();
+  }
+}
+function exportData(){
+  const blob=new Blob([JSON.stringify(S,null,2)],{type:"application/json"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+  a.download="food-tracker-backup-"+todayISO()+".json"; a.click();
+}
+function importData(){
+  const inp=document.createElement("input"); inp.type="file"; inp.accept="application/json";
+  inp.onchange=()=>{ const f=inp.files[0]; if(!f) return;
+    const r=new FileReader(); r.onload=()=>{ try{
+      const d=JSON.parse(r.result); S=Object.assign({},DEFAULT,d,{tab:"home",viewDate:todayISO()});
+      save(); render(); toast("יובא בהצלחה ✓");
+    }catch(e){ toast("קובץ לא תקין"); } }; r.readAsText(f);
+  }; inp.click();
+}
+
+/* ---------- sheet utils ---------- */
+function openSheet(){ document.getElementById("scrim").classList.add("open"); }
+function closeSheet(){ document.getElementById("scrim").classList.remove("open"); window._aiResult=null; window._aiBusy=false; }
+document.getElementById("scrim").addEventListener("click",e=>{ if(e.target.id==="scrim") closeSheet(); });
+
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+/* ---------- boot ---------- */
+window.go=go; window.ob=ob; window.finishOnboard=finishOnboard;
+render();
+</script>
+</body>
+</html>
