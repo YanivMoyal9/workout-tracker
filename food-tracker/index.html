@@ -246,6 +246,52 @@ const DB = [
   ["קפה עם חלב","☕",30,1.6,3,1],
 ];
 
+/* ===== Natural portion units per food (label → grams, edible weight) =====
+   For whole/known items you can pick a size/unit instead of guessing grams.
+   Weights are common averages (USDA / Israeli egg-size standards). */
+const PORTIONS = {
+  "חזה עוף בגריל": [["חצי חזה",90],["חזה בינוני",120],["חזה גדול",170]],
+  "ביצה":          [["S",44],["M",50],["L",58],["XL",64]],
+  "אורז לבן מבושל":[["חצי כוס",80],["כוס",160]],
+  "פסטה מבושלת":   [["חצי מנה",70],["מנה",140]],
+  "לחם מלא":       [["פרוסה",28],["2 פרוסות",56]],
+  "פיתה":          [["מיני",30],["רגילה",60],["גדולה",90]],
+  "אבוקדו":        [["רבע",50],["חצי",100],["שלם",200]],
+  "בננה":          [["קטנה",90],["בינונית",118],["גדולה",136]],
+  "תפוח":          [["קטן",110],["בינוני",180],["גדול",220]],
+  "גבינה צהובה":   [["פרוסה",25],["2 פרוסות",50]],
+  "קוטג' 5%":      [["כף",30],["חצי גביע",125],["גביע",250]],
+  "יוגורט יווני":  [["גביע קטן",100],["גביע",150]],
+  "טונה במים":     [["חצי קופסה",70],["קופסה",140]],
+  "סלמון":         [["מנה",120],["פילה גדול",170]],
+  "בשר בקר טחון":  [["מנה",120],["מנה גדולה",180]],
+  "תפוח אדמה אפוי":[["קטן",140],["בינוני",173],["גדול",300]],
+  "בטטה":          [["קטנה",90],["בינונית",130],["גדולה",200]],
+  "עדשים מבושלות": [["חצי כוס",99],["כוס",198]],
+  "חומוס":         [["כף",30],["מנה",100]],
+  "טחינה":         [["כפית",5],["כף",15]],
+  "שקדים":         [["10 יח'",12],["חופן",28]],
+  "חלב 3%":        [["חצי כוס",120],["כוס",240]],
+  "שוקולד מריר":   [["שורה",10],["רבע חפיסה",25],["חצי חפיסה",50]],
+  "סלט ירקות":     [["קטן",100],["מנה",150],["גדול",250]],
+  "מלפפון":        [["קטן",60],["יחידה",100]],
+  "עגבנייה":       [["קטנה",80],["יחידה",120]],
+  "פיצה":          [["משולש",107],["משולש גדול",140]],
+  "המבורגר":       [["יחידה",150]],
+  "שניצל":         [["יחידה",100],["גדול",150]],
+  "במבה":          [["שקית קטנה",25],["שקית גדולה",80]],
+  "קולה":          [["כוס",250],["פחית",330],["בקבוק חצי ליטר",500]],
+  "בירה":          [["פחית",330],["חצי ליטר",500]],
+  "שמן זית":       [["כפית",5],["כף",15]],
+  "אורז מלא":      [["חצי כוס",98],["כוס",195]],
+  "קינואה מבושלת": [["חצי כוס",93],["כוס",185]],
+  "גזר":           [["יחידה",60],["גדול",90]],
+  "ברוקולי":       [["מנה",90],["כוס",91]],
+  "תירס":          [["קלח",100],["כוס",145]],
+  "דגני בוקר":     [["מנה",40],["קערה",60]],
+  "קפה עם חלב":    [["כוס",240]],
+};
+
 /* meal ideas: [name, emoji, cal, protein, carbs, fat] */
 const MEALS = [
   ["יוגורט יווני עם פרי וקצת גרנולה","🥣",220,18,28,4],
@@ -587,7 +633,7 @@ async function lookupBarcode(code){
     const name=(d.product.product_name_he||d.product.product_name||("מוצר "+code))
       + (d.product.brands?` (${d.product.brands.split(",")[0]})`:"");
     window._gramTarget={ f:[name,"📦",cal,+(n.proteins_100g||0),+(n.carbohydrates_100g||0),+(n.fat_100g||0)] };
-    askGrams(name,"📦",100);
+    askGrams(name,"📦");
   } catch(e){ toast("שגיאה בחיפוש — בדוק חיבור אינטרנט"); setAddTab("barcode"); }
 }
 function photoPanel(){
@@ -661,17 +707,32 @@ let _dbPick=null;
 function pickDb(idx){
   const f=DB[idx];
   window._gramTarget={ type:"db", f };
-  askGrams(f[0], f[1], 100);
+  askGrams(f[0], f[1]);
 }
-function askGrams(name, emoji, def){
+function setGin(g, el){
+  const gin=document.getElementById("gin"); gin.value=g;
+  if(el){ [...el.parentNode.children].forEach(c=>c.classList.remove("on")); el.classList.add("on"); }
+}
+function askGrams(name, emoji){
+  const units=PORTIONS[name];
+  // default to a sensible portion (middle size) when units exist, else 100g
+  const def = units ? units[Math.floor(units.length/2)][1] : 100;
+  const defIdx = units ? Math.floor(units.length/2) : -1;
+  let chips;
+  if(units){
+    chips = units.map((u,i)=>`<button class="chip${i===defIdx?' on':''}" onclick="setGin(${u[1]},this)">${esc(u[0])}<span style="opacity:.6;font-size:11px"> · ${u[1]}ג'</span></button>`).join("");
+  } else {
+    chips = [50,100,150,200,300].map(g=>`<button class="chip${g===100?' on':''}" onclick="setGin(${g},this)">${g}g</button>`).join("");
+  }
   document.getElementById("sheet").innerHTML=`
     <div class="handle"></div>
     <h2 style="margin:2px">${emoji} ${esc(name)}</h2>
-    <div class="card"><label>כמה גרם אכלת?</label>
-    <input id="gin" type="number" inputmode="numeric" value="${def}" autofocus>
-    <div class="chips" style="margin-top:10px">
-      ${[50,100,150,200,300].map(g=>`<button class="chip" onclick="document.getElementById('gin').value=${g}">${g}g</button>`).join("")}
-    </div></div>
+    <div class="card">
+    <label>${units?"בחר כמות / גודל":"כמה גרם אכלת?"}</label>
+    <div class="chips" style="margin-bottom:10px">${chips}</div>
+    <label>או הזן גרמים ידנית</label>
+    <input id="gin" type="number" inputmode="numeric" value="${def}" autofocus oninput="this.closest('.card').querySelectorAll('.chip.on').forEach(c=>c.classList.remove('on'))">
+    </div>
     <button class="btn" onclick="confirmGrams()">הוסף</button>
     <button class="btn sec" style="margin-top:8px" onclick="renderAddSheet()">חזרה</button>`;
 }
