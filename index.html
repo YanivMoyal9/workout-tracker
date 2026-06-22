@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#E7E5E0" />
+<title>האפליקציות שלי</title>
+<style>
+  html,body{margin:0;background:#E7E5E0;color:#2F3033;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;min-height:100vh}
+  .wrap{max-width:520px;margin:0 auto;padding:40px 18px}
+  h1{font-size:24px;font-weight:800;margin:8px 2px 4px}
+  p.sub{color:#7C7F85;font-size:14px;margin:0 2px 24px}
+  a.card{display:flex;align-items:center;gap:16px;text-decoration:none;color:inherit;background:#FBFAF8;
+    border-radius:18px;padding:20px;margin:14px 0;box-shadow:0 1px 3px rgba(0,0,0,.05);transition:transform .12s}
+  a.card:active{transform:scale(.98)}
+  .em{font-size:38px;width:54px;height:54px;display:flex;align-items:center;justify-content:center;
+    background:#E7E5E0;border-radius:14px}
+  .t b{font-size:17px;font-weight:800;display:block}
+  .t span{font-size:13px;color:#7C7F85}
+  .arr{margin-inline-start:auto;color:#6AA84F;font-size:22px}
+  footer{text-align:center;color:#9A9DA3;font-size:12px;margin-top:28px}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>👋 האפליקציות שלי</h1>
+    <p class="sub">בחר אפליקציה כדי להתחיל</p>
+
+    <a class="card" href="food-tracker/index.html">
+      <div class="em">🥗</div>
+      <div class="t"><b>תזונה חכמה</b><span>מעקב משקל, קלוריות וזיהוי אוכל מתמונה</span></div>
+      <div class="arr">‹</div>
+    </a>
+
+    <a class="card" href="workout-tracker.html">
+      <div class="em">🏋️</div>
+      <div class="t"><b>מערכת אימון A/B</b><span>מעקב אימוני כוח, סטים, משקלים ושיאים</span></div>
+      <div class="arr">‹</div>
+    </a>
+
+    <footer>נבנה עם Claude · הנתונים נשמרים מקומית במכשיר</footer>
+  </div>
+</body>
+</html>
