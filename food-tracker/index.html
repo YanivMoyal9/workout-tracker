@@ -372,7 +372,11 @@ function renderHome(){
       <div class="bar"><i style="width:${w}%;background:${color}"></i></div><div class="xs muted">גרם</div></div>`;
   };
   app().innerHTML = `
-    <div class="row between" style="margin-top:6px">
+    <div class="row between" style="margin-top:4px">
+      <a href="../index.html" class="chip" style="text-decoration:none;display:inline-flex;align-items:center;gap:5px">⌂ אפליקציות</a>
+      <div class="b" style="font-size:15px">🥗 תזונה חכמה</div>
+    </div>
+    <div class="row between" style="margin-top:8px">
       <button class="chip" onclick="shiftDay(-1)">‹</button>
       <h1 style="margin:0">${fmtDate(S.viewDate)}</h1>
       <button class="chip" onclick="shiftDay(1)" ${S.viewDate>=todayISO()?'disabled style=opacity:.3':''}>›</button>
