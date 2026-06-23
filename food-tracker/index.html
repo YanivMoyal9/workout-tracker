@@ -836,12 +836,12 @@ async function aiMealIdea(){
   } catch(e){ toast(e.message||"שגיאה"); closeSheet(); }
 }
 function itemRow(i){
-  return `<div class="item">
+  return `<div class="item" onclick="editItem('${i.id}')" style="cursor:pointer">
     <div class="em">${i.emoji||"🍽️"}</div>
     <div class="grow"><div class="nm">${esc(i.name)}</div>
       <div class="meta">${i.grams?i.grams+" גר' · ":""}ח׳ ${Math.round(i.protein||0)} · פ׳ ${Math.round(i.carbs||0)} · ש׳ ${Math.round(i.fat||0)}${i.source==='ai'?' · 📷 AI':''}</div></div>
     <div class="kc">${i.calories} <span class="xs muted">קל'</span></div>
-    <button class="x" onclick="delItem('${i.id}')">✕</button>
+    <button class="x" onclick="event.stopPropagation();delItem('${i.id}')">✕</button>
   </div>`;
 }
 function renderAdvice(left,sum,t){
@@ -862,6 +862,84 @@ function shiftDay(d){
 function delItem(id){
   const arr=todayItems(); const idx=arr.findIndex(x=>x.id===id);
   if(idx>=0){ arr.splice(idx,1); save(); render(); toast("נמחק"); }
+}
+/* ---------- Edit quantity of a logged item ---------- */
+function editItem(id){
+  const i=todayItems().find(x=>x.id===id); if(!i) return;
+  let per100=i.per100;
+  if((!per100||!(+per100.cal)) && i.grams>0){          // derive basis for older items
+    const r=100/i.grams;
+    per100={ cal:Math.round((i.calories||0)*r), protein:+(((i.protein||0)*r)).toFixed(1),
+      carbs:+(((i.carbs||0)*r)).toFixed(1), fat:+(((i.fat||0)*r)).toFixed(1) };
+  }
+  if(per100&&+per100.cal){
+    window._edit={ id, mode:"grams", name:i.name, emoji:i.emoji||"🍽️", grams:Math.round(i.grams)||100, per100 };
+  } else {
+    // no per-gram basis (e.g. a fixed meal) — scale the logged portion as a whole
+    window._edit={ id, mode:"qty", name:i.name, emoji:i.emoji||"🍽️", qty:1,
+      base:{ cal:i.calories||0, protein:i.protein||0, carbs:i.carbs||0, fat:i.fat||0, grams:i.grams||0 } };
+  }
+  openSheet(); renderEditSheet();
+}
+function editCalc(e){
+  if(e.mode==="grams"){ const r=(+e.grams||0)/100, p=e.per100;
+    return { grams:Math.round(+e.grams||0), cal:Math.round((+p.cal||0)*r),
+      protein:+(((+p.protein||0)*r)).toFixed(1), carbs:+(((+p.carbs||0)*r)).toFixed(1), fat:+(((+p.fat||0)*r)).toFixed(1) }; }
+  const q=+e.qty||0, b=e.base;
+  return { grams:Math.round((b.grams||0)*q), cal:Math.round((b.cal||0)*q),
+    protein:+(((b.protein||0)*q)).toFixed(1), carbs:+(((b.carbs||0)*q)).toFixed(1), fat:+(((b.fat||0)*q)).toFixed(1) };
+}
+function editBumpG(d){ const e=window._edit; e.grams=Math.max(0,Math.round((+e.grams||0)+d)); renderEditSheet(); }
+function editMulG(f){ const e=window._edit; e.grams=Math.max(1,Math.round((+e.grams||0)*f)); renderEditSheet(); }
+function editSetG(v){ const e=window._edit; e.grams=Math.max(0,Math.round(+v||0)); renderEditSheet(); }
+function editBumpQ(d){ const e=window._edit; e.qty=Math.max(0.5,+( (+e.qty||0)+d ).toFixed(2)); renderEditSheet(); }
+function editSetQ(v){ const e=window._edit; e.qty=Math.max(0,+(+v||0).toFixed(2)); renderEditSheet(); }
+function saveEdit(){
+  const e=window._edit, i=todayItems().find(x=>x.id===e.id); if(!i){ closeSheet(); return; }
+  const c=editCalc(e);
+  i.grams=c.grams; i.calories=c.cal; i.protein=c.protein; i.carbs=c.carbs; i.fat=c.fat;
+  if(e.mode==="grams") i.per100=e.per100;
+  save(); closeSheet(); render(); toast("עודכן ✓");
+}
+function renderEditSheet(){
+  const e=window._edit, c=editCalc(e);
+  const btn="width:34px;height:34px;border-radius:9px;border:1px solid var(--line);background:transparent;font-size:20px;line-height:1;color:inherit";
+  let body;
+  if(e.mode==="grams"){
+    body=`<label>כמה גרם?</label>
+      <div class="row" style="gap:8px;align-items:center;margin:6px 0 12px">
+        <button onclick="editBumpG(-10)" style="${btn}">−</button>
+        <input type="number" inputmode="numeric" value="${c.grams}" onchange="editSetG(this.value)"
+          style="width:84px;height:38px;text-align:center;border:1px solid var(--line);border-radius:10px;background:transparent;color:inherit;font-weight:800;font-size:18px">
+        <button onclick="editBumpG(10)" style="${btn}">＋</button>
+        <span class="muted sm">גר'</span>
+      </div>
+      <div class="chips"><button class="chip" onclick="editMulG(0.5)">½ כמות</button>
+        <button class="chip" onclick="editMulG(2)">×2</button>
+        <button class="chip" onclick="editMulG(3)">×3</button></div>`;
+  } else {
+    body=`<label>כמה מנות?</label>
+      <div class="row" style="gap:8px;align-items:center;margin:6px 0 4px">
+        <button onclick="editBumpQ(-0.5)" style="${btn}">−</button>
+        <input type="number" inputmode="decimal" step="0.5" value="${e.qty}" onchange="editSetQ(this.value)"
+          style="width:84px;height:38px;text-align:center;border:1px solid var(--line);border-radius:10px;background:transparent;color:inherit;font-weight:800;font-size:18px">
+        <button onclick="editBumpQ(0.5)" style="${btn}">＋</button>
+        <span class="muted sm">מנות</span>
+      </div>
+      <p class="muted xs" style="margin:0">המנה המקורית = 1. למשל 2 = פי שניים.</p>`;
+  }
+  document.getElementById("sheet").innerHTML=`
+    <div class="handle"></div>
+    <h2 style="margin:2px">${e.emoji} ${esc(e.name)}</h2>
+    <div class="card">${body}
+      <div class="card center" style="margin:14px 0 2px">
+        <div style="font-size:30px;font-weight:800">${c.cal} קל'</div>
+        <div class="muted sm">${c.grams?c.grams+" גר' · ":""}ח׳ ${Math.round(c.protein)} · פ׳ ${Math.round(c.carbs)} · ש׳ ${Math.round(c.fat)} גר'</div>
+      </div>
+    </div>
+    <button class="btn" onclick="saveEdit()">שמור</button>
+    <button class="btn danger" style="margin-top:8px" onclick="delItem('${e.id}');closeSheet()">🗑️ מחק פריט</button>
+    <button class="btn sec" style="margin-top:8px" onclick="closeSheet()">ביטול</button>`;
 }
 
 /* ---------- Add food sheet ---------- */
@@ -1158,14 +1236,18 @@ function confirmGrams(){
   if(g<=0){ toast("נא להזין כמות"); return; }
   const f=window._gramTarget.f, r=g/100;
   addItem({ name:f[0], emoji:f[1], grams:g, calories:Math.round(f[2]*r),
-    protein:+(f[3]*r).toFixed(1), carbs:+(f[4]*r).toFixed(1), fat:+(f[5]*r).toFixed(1), source:"db" });
+    protein:+(f[3]*r).toFixed(1), carbs:+(f[4]*r).toFixed(1), fat:+(f[5]*r).toFixed(1), source:"db",
+    per100:{ cal:+f[2], protein:+f[3], carbs:+f[4], fat:+f[5] } });
   closeSheet(); toast("נוסף ✓");
 }
 function addManual(){
   const m=window._man;
   if(!m.name||!m.cal){ toast("נא למלא שם וקלוריות"); return; }
-  addItem({ name:m.name, emoji:"🍽️", grams:+m.grams||0, calories:Math.round(+m.cal),
-    protein:+m.p||0, carbs:+m.c||0, fat:+m.f||0, source:"manual" });
+  const mg=+m.grams||0, mr=mg?100/mg:0;
+  addItem({ name:m.name, emoji:"🍽️", grams:mg, calories:Math.round(+m.cal),
+    protein:+m.p||0, carbs:+m.c||0, fat:+m.f||0, source:"manual",
+    per100: mg?{ cal:Math.round((+m.cal||0)*mr), protein:+(((+m.p||0)*mr)).toFixed(1),
+      carbs:+(((+m.c||0)*mr)).toFixed(1), fat:+(((+m.f||0)*mr)).toFixed(1) }:null });
   window._man=null; closeSheet(); toast("נוסף ✓");
 }
 function addItem(it){
@@ -1193,7 +1275,8 @@ function addAiItems(){
   window._aiResult.items.forEach(i=>S.log[k].push({
     id:uid(), name:i.name, emoji:i.emoji||"🍽️", grams:Math.round(i.grams),
     calories:Math.round(i.calories), protein:+(+i.protein).toFixed(1),
-    carbs:+(+i.carbs).toFixed(1), fat:+(+i.fat).toFixed(1), source:"ai", time:Date.now()
+    carbs:+(+i.carbs).toFixed(1), fat:+(+i.fat).toFixed(1), source:"ai", time:Date.now(),
+    per100:i.per100||null
   }));
   save(); window._aiResult=null; closeSheet(); render(); toast("נוסף ליום ✓");
 }
