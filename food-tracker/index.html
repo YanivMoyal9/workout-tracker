@@ -820,7 +820,10 @@ async function aiMealIdea(){
       body:JSON.stringify({ model:S.settings.model||"claude-opus-4-8", max_tokens:600,
         messages:[{role:"user",content:prompt}] })
     });
-    if(!r.ok){ throw new Error(r.status===401?"מפתח API שגוי":"שגיאת שרת"); }
+    if(!r.ok){
+      let body=""; try{ body=(await r.text()).slice(0,400); }catch(_){}
+      throw new Error(`שגיאה ${r.status} מהשרת` + (body?`: ${body}`:""));
+    }
     const d=await r.json();
     if(d.stop_reason==="refusal") throw new Error("הבקשה נדחתה");
     const txt=(d.content.find(b=>b.type==="text")||{}).text||"לא התקבלה תשובה";
@@ -1175,9 +1178,10 @@ async function analyzeFood(b64, media){
     })
   });
   if(!resp.ok){
-    let m="שגיאת שרת ("+resp.status+")";
-    try{ const e=await resp.json(); if(e.error&&e.error.message) m=e.error.message; }catch(_){}
-    if(resp.status===401) m="מפתח API שגוי — בדוק בהגדרות";
+    let body=""; try{ body=await resp.text(); }catch(_){}
+    let m=`שגיאה ${resp.status} מהשרת`;
+    try{ const e=JSON.parse(body); if(e.error&&e.error.message) m+=`: ${e.error.message}`; else if(body) m+=`: ${body.slice(0,300)}`; }
+    catch(_){ if(body) m+=`: ${body.slice(0,300)}`; }
     throw new Error(m);
   }
   const data=await resp.json();
