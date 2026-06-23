@@ -167,7 +167,7 @@ const DEFAULT = {
   water: {},                     // { "YYYY-MM-DD": ml }
   weights: [],                   // [{date,kg}]
   barcodes: {},                  // { "<code>": [name,emoji,cal,p,c,f] per 100g — learned products }
-  settings: { apiKey:"", apiUrl:"", dark:false, model:"claude-opus-4-8" },
+  settings: { apiKey:"", apiUrl:"", nixId:"", nixKey:"", dark:false, model:"claude-opus-4-8" },
   tab: "home",
   viewDate: todayISO()
 };
@@ -966,20 +966,51 @@ async function lookupBarcode(code){
   }
   document.getElementById("sheet").innerHTML=`<div class="handle"></div>
     <div class="card center"><div class="spin" style="border-color:rgba(106,168,79,.3);border-top-color:var(--green);margin:14px auto 12px"></div>מחפש מוצר ${esc(code)}...</div>`;
+  let name="";
+  // 2) Open Food Facts (global), then 3) Nutritionix (if key set) — chained
+  let res=await offLookup(code);
+  if(res&&res.f){ saveAndUse(code,res.f); return; }
+  if(res&&res.name) name=res.name;
+  let res2=await nixLookup(code);
+  if(res2&&res2.f){ saveAndUse(code,res2.f); return; }
+  if(res2&&res2.name&&!name) name=res2.name;
+  // 4) not found anywhere — enter once (name prefilled if any source had it)
+  openNewProduct(code,name);
+}
+function saveAndUse(code,f){
+  S.barcodes[code]=f; save();              // remember for next time
+  window._gramTarget={ f };
+  askGrams(f[0], f[1]||"📦");
+}
+async function offLookup(code){
   try {
     const r=await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=product_name,product_name_he,brands,nutriments`);
     const d=await r.json();
-    if(d.status!==1 || !d.product){ openNewProduct(code,""); return; }
+    if(d.status!==1 || !d.product) return null;
     const n=d.product.nutriments||{};
     const cal = Math.round(n["energy-kcal_100g"] != null ? n["energy-kcal_100g"] : (n["energy_100g"]||0)/4.184);
-    const name=(d.product.product_name_he||d.product.product_name||"")
-      + (d.product.brands?` (${d.product.brands.split(",")[0]})`:"");
-    if(!cal){ openNewProduct(code, name.trim()); return; }
-    const f=[name.trim()||("מוצר "+code),"📦",cal,+(n.proteins_100g||0),+(n.carbohydrates_100g||0),+(n.fat_100g||0)];
-    S.barcodes[code]=f; save();            // remember for next time
-    window._gramTarget={ f };
-    askGrams(f[0],"📦");
-  } catch(e){ toast("אין חיבור — אפשר להזין ידנית"); openNewProduct(code,""); }
+    const name=((d.product.product_name_he||d.product.product_name||"")
+      + (d.product.brands?` (${d.product.brands.split(",")[0]})`:"")).trim();
+    if(!cal) return { name };               // found but no nutrition data
+    return { f:[name||("מוצר "+code),"📦",cal,+(n.proteins_100g||0),+(n.carbohydrates_100g||0),+(n.fat_100g||0)] };
+  } catch(e){ return null; }
+}
+async function nixLookup(code){
+  if(!S.settings.nixId || !S.settings.nixKey) return null;
+  try {
+    const r=await fetch(`https://trackapi.nutritionix.com/v2/search/item?upc=${encodeURIComponent(code)}`,{
+      headers:{ "x-app-id":S.settings.nixId, "x-app-key":S.settings.nixKey }
+    });
+    if(!r.ok) return null;
+    const d=await r.json();
+    const food=d.foods&&d.foods[0]; if(!food) return null;
+    const g=food.serving_weight_grams||100;
+    const per=(v)=> g? +((+v||0)/g*100).toFixed(1) : (+v||0);   // Nutritionix is per-serving → per 100g
+    const name=((food.brand_name?food.brand_name+" ":"")+(food.food_name||"")).trim();
+    const cal=Math.round(per(food.nf_calories));
+    if(!cal) return name?{name}:null;
+    return { f:[name||("מוצר "+code),"📦",cal,per(food.nf_protein),per(food.nf_total_carbohydrate),per(food.nf_total_fat)] };
+  } catch(e){ return null; }
 }
 /* Unknown product: enter per-100g values once; saved under the barcode for next time */
 function openNewProduct(code, name){
@@ -1359,6 +1390,17 @@ function renderSettings(){
       <p class="xs muted" style="margin-top:10px">מפתח אפשר להפיק ב־console.anthropic.com. הקריאה ל־API מתבצעת ישירות מהדפדפן — מתאים לשימוש אישי.</p>
     </div>
 
+    <h2>סריקת ברקוד — מקור שני (Nutritionix)</h2>
+    <div class="card">
+      <p class="sub" style="margin:0 0 4px">מוצר שלא נמצא ב־Open Food Facts ייבדק גם מול Nutritionix. דורש מפתח חינמי מ־<b>developer.nutritionix.com</b> (App ID + App Key).</p>
+      <label>App ID</label>
+      <input id="nixid" value="${esc(S.settings.nixId||'')}" placeholder="x-app-id">
+      <label>App Key</label>
+      <input id="nixkey" type="password" value="${esc(S.settings.nixKey||'')}" placeholder="x-app-key">
+      <button class="btn" style="margin-top:12px" onclick="saveKey()">שמור</button>
+      <p class="xs muted" style="margin-top:10px">משאירים ריק = חיפוש מול Open Food Facts בלבד. מחזק בעיקר מוצרים בינלאומיים/מותגים.</p>
+    </div>
+
     <h2>תצוגה ונתונים</h2>
     <div class="card">
       <div class="row between" style="padding:6px 0"><span class="b">מצב כהה</span>
@@ -1376,6 +1418,9 @@ function saveKey(){
   S.settings.apiKey=document.getElementById("apikey").value.trim();
   S.settings.apiUrl=document.getElementById("apiurl").value.trim();
   S.settings.model=document.getElementById("model").value;
+  const nid=document.getElementById("nixid"), nk=document.getElementById("nixkey");
+  if(nid) S.settings.nixId=nid.value.trim();
+  if(nk) S.settings.nixKey=nk.value.trim();
   save(); toast("נשמר ✓");
 }
 function toggleDark(){ S.settings.dark=!S.settings.dark; save(); render(); }
