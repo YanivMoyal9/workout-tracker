@@ -1050,13 +1050,21 @@ function photoPanel(){
     const r=window._aiResult;
     const tot=r.items.reduce((a,i)=>({cal:a.cal+i.calories,p:a.p+i.protein,c:a.c+i.carbs,f:a.f+i.fat}),{cal:0,p:0,c:0,f:0});
     return `<div class="card" style="padding:8px 16px">
-      ${r.items.map((i,idx)=>`<div class="item">
+      ${r.items.map((i,idx)=>`<div class="item" style="align-items:flex-start">
         <div class="em">${i.emoji||"🍽️"}</div>
-        <div class="grow"><div class="nm">${esc(i.name)} <span class="pill ${i.confidence}">${({high:"ודאות גבוהה",medium:"בינונית",low:"הערכה"})[i.confidence]||""}</span></div>
-        <div class="meta">~${Math.round(i.grams)} גר' · ח׳ ${Math.round(i.protein)} · פ׳ ${Math.round(i.carbs)} · ש׳ ${Math.round(i.fat)}</div></div>
+        <div class="grow"><div class="nm">${esc(i.name)} <span class="pill ${i.confidence}">${({high:"זיהוי בטוח",medium:"זיהוי סביר",low:"זיהוי משוער"})[i.confidence]||""}</span></div>
+        <div class="meta">ח׳ ${Math.round(i.protein)} · פ׳ ${Math.round(i.carbs)} · ש׳ ${Math.round(i.fat)} גר'</div>
+        <div class="row" style="gap:6px;align-items:center;margin-top:7px">
+          <span class="muted xs">⚖️ משקל:</span>
+          <button onclick="bumpAiGrams(${idx},-10)" style="width:28px;height:28px;border-radius:8px;border:1px solid var(--line);background:var(--card2,transparent);font-size:18px;line-height:1;color:inherit">−</button>
+          <input type="number" inputmode="numeric" value="${Math.round(i.grams)}" onchange="setAiGrams(${idx},this.value)" style="width:60px;height:28px;text-align:center;border:1px solid var(--line);border-radius:8px;background:transparent;color:inherit;font-weight:700">
+          <button onclick="bumpAiGrams(${idx},10)" style="width:28px;height:28px;border-radius:8px;border:1px solid var(--line);background:var(--card2,transparent);font-size:18px;line-height:1;color:inherit">＋</button>
+          <span class="muted xs">גר'</span>
+        </div></div>
         <div class="kc">${Math.round(i.calories)}</div>
       </div>`).join("")}
     </div>
+    <p class="sub" style="margin:4px 2px">⚖️ שקלת את המנה? עדכן את המשקל והערכים יתעדכנו אוטומטית.</p>
     ${r.note?`<p class="sub" style="margin:4px 2px">📝 ${esc(r.note)}</p>`:""}
     <div class="card center"><div class="muted sm">סה״כ לארוחה</div><div style="font-size:30px;font-weight:800">${Math.round(tot.cal)} קל'</div>
       <div class="muted sm">חלבון ${Math.round(tot.p)} · פחמימה ${Math.round(tot.c)} · שומן ${Math.round(tot.f)} גר'</div></div>
@@ -1164,6 +1172,21 @@ function addItem(it){
   const k=S.viewDate; (S.log[k]=S.log[k]||[]).push(it);
   save(); render();
 }
+function aiRecalc(i){
+  const g=Math.max(0,+i.grams||0), r=g/100, p=i.per100||{};
+  i.calories=Math.round((+p.cal||0)*r);
+  i.protein=+(((+p.protein||0)*r)).toFixed(1);
+  i.carbs=+(((+p.carbs||0)*r)).toFixed(1);
+  i.fat=+(((+p.fat||0)*r)).toFixed(1);
+}
+function setAiGrams(idx,v){
+  const i=window._aiResult.items[idx]; if(!i) return;
+  i.grams=Math.max(0,Math.round(+v||0)); aiRecalc(i); renderAddSheet();
+}
+function bumpAiGrams(idx,d){
+  const i=window._aiResult.items[idx]; if(!i) return;
+  i.grams=Math.max(0,Math.round((+i.grams||0)+d)); aiRecalc(i); renderAddSheet();
+}
 function addAiItems(){
   const k=S.viewDate; S.log[k]=S.log[k]||[];
   window._aiResult.items.forEach(i=>S.log[k].push({
@@ -1187,6 +1210,15 @@ async function handlePhoto(file){
   try {
     const {b64, media} = await downscale(file);
     const result = await analyzeFood(b64, media);
+    (result.items||[]).forEach(i=>{
+      // ensure we have per-100g values so the editable weight can recalculate
+      if(!i.per100 || !(+i.per100.cal)){
+        const g=(+i.grams)||0, r=g?100/g:0;
+        i.per100={ cal:Math.round((+i.calories||0)*r), protein:+(((+i.protein||0)*r)).toFixed(1),
+          carbs:+(((+i.carbs||0)*r)).toFixed(1), fat:+(((+i.fat||0)*r)).toFixed(1) };
+      }
+      aiRecalc(i);
+    });
     window._aiResult = result;
   } catch(e){
     toast(e.message||"שגיאה בניתוח");
@@ -1220,9 +1252,12 @@ const FOOD_SCHEMA = {
         name:{type:"string"}, emoji:{type:"string"},
         grams:{type:"number"}, calories:{type:"number"},
         protein:{type:"number"}, carbs:{type:"number"}, fat:{type:"number"},
+        per100:{ type:"object", additionalProperties:false,
+          properties:{ cal:{type:"number"}, protein:{type:"number"}, carbs:{type:"number"}, fat:{type:"number"} },
+          required:["cal","protein","carbs","fat"] },
         confidence:{type:"string", enum:["high","medium","low"]}
       },
-      required:["name","emoji","grams","calories","protein","carbs","fat","confidence"]
+      required:["name","emoji","grams","calories","protein","carbs","fat","per100","confidence"]
     }},
     note:{type:"string"}
   },
@@ -1230,8 +1265,13 @@ const FOOD_SCHEMA = {
 };
 async function analyzeFood(b64, media){
   const prompt = `אתה תזונאי מומחה. בתמונה מופיע אוכל. זהה כל מאכל/מנה נפרדים בצלחת.
-לכל פריט החזר: שם בעברית, אימוג'י מתאים, הערכת משקל בגרמים, וערכים תזונתיים (קלוריות, חלבון, פחמימות, שומן) למנה כפי שהיא נראית בתמונה (לא ל-100 גרם).
-שדה confidence: high אם ברור, medium אם סביר, low אם ניחוש. בשדה note כתוב משפט קצר בעברית עם טיפ או הסתייגות. אם אין אוכל בתמונה, החזר items ריק והסבר ב-note.`;
+לכל פריט החזר:
+- name: שם בעברית. emoji: אימוג'י מתאים.
+- per100: ערכים תזונתיים תקניים ל-100 גרם של אותו מאכל (cal, protein, carbs, fat). אלה נתונים ידועים — היה מדויק.
+- grams: הערכת משקל המנה בתמונה. שים לב: אומדן משקל מתמונה קשה ולא מדויק — היה שמרן, נטה לכיוון הנמוך, ואל תנפח כמויות. אם אין עצם ייחוס לגודל המנה ציין זאת ב-note.
+- calories, protein, carbs, fat: עבור המנה כפי שנראית, כלומר per100 כפול grams חלקי 100.
+- confidence: מתייחס אך ורק לוודאות זיהוי המאכל (לא למשקל): high אם ברור מהו, medium אם סביר, low אם לא בטוח.
+בשדה note כתוב משפט קצר בעברית, וציין שכדאי לשקול את המנה ולתקן את המשקל לדיוק מרבי. אם אין אוכל בתמונה, החזר items ריק והסבר ב-note.`;
   const resp = await fetch(aiEndpoint(),{
     method:"POST",
     headers:{
