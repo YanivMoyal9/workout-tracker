@@ -166,6 +166,7 @@ const DEFAULT = {
   log: {},                       // { "YYYY-MM-DD": [items] }
   water: {},                     // { "YYYY-MM-DD": ml }
   weights: [],                   // [{date,kg}]
+  barcodes: {},                  // { "<code>": [name,emoji,cal,p,c,f] per 100g — learned products }
   settings: { apiKey:"", apiUrl:"", dark:false, model:"claude-opus-4-8" },
   tab: "home",
   viewDate: todayISO()
@@ -956,20 +957,61 @@ async function lookupBarcode(code){
   code=(code||"").trim().replace(/\D/g,"");
   if(code.length<6){ toast("מספר ברקוד לא תקין"); return; }
   stopScanner();
+  // 1) learned products (saved on this device) — instant, works offline
+  if(S.barcodes && S.barcodes[code]){
+    window._gramTarget={ f:S.barcodes[code] };
+    toast("מוצר מוכר ✓");
+    askGrams(S.barcodes[code][0], S.barcodes[code][1]||"📦");
+    return;
+  }
   document.getElementById("sheet").innerHTML=`<div class="handle"></div>
     <div class="card center"><div class="spin" style="border-color:rgba(106,168,79,.3);border-top-color:var(--green);margin:14px auto 12px"></div>מחפש מוצר ${esc(code)}...</div>`;
   try {
     const r=await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=product_name,product_name_he,brands,nutriments`);
     const d=await r.json();
-    if(d.status!==1 || !d.product){ toast("מוצר לא נמצא — נסה ידנית"); setAddTab("manual"); return; }
+    if(d.status!==1 || !d.product){ openNewProduct(code,""); return; }
     const n=d.product.nutriments||{};
     const cal = Math.round(n["energy-kcal_100g"] != null ? n["energy-kcal_100g"] : (n["energy_100g"]||0)/4.184);
-    if(!cal){ toast("אין נתוני קלוריות למוצר"); setAddTab("manual"); return; }
-    const name=(d.product.product_name_he||d.product.product_name||("מוצר "+code))
+    const name=(d.product.product_name_he||d.product.product_name||"")
       + (d.product.brands?` (${d.product.brands.split(",")[0]})`:"");
-    window._gramTarget={ f:[name,"📦",cal,+(n.proteins_100g||0),+(n.carbohydrates_100g||0),+(n.fat_100g||0)] };
-    askGrams(name,"📦");
-  } catch(e){ toast("שגיאה בחיפוש — בדוק חיבור אינטרנט"); setAddTab("barcode"); }
+    if(!cal){ openNewProduct(code, name.trim()); return; }
+    const f=[name.trim()||("מוצר "+code),"📦",cal,+(n.proteins_100g||0),+(n.carbohydrates_100g||0),+(n.fat_100g||0)];
+    S.barcodes[code]=f; save();            // remember for next time
+    window._gramTarget={ f };
+    askGrams(f[0],"📦");
+  } catch(e){ toast("אין חיבור — אפשר להזין ידנית"); openNewProduct(code,""); }
+}
+/* Unknown product: enter per-100g values once; saved under the barcode for next time */
+function openNewProduct(code, name){
+  const p=window._np={code, name:name||"", cal:"", pr:"", c:"", f:""};
+  document.getElementById("sheet").innerHTML=`<div class="handle"></div>
+    <h2 style="margin:2px">📦 מוצר חדש</h2>
+    <p class="sub" style="margin:0 0 10px">המוצר (ברקוד ${esc(code)}) לא נמצא במאגר. מלא את הערכים <b>ל־100 גרם</b> פעם אחת — ונשמור אותו, כך שבפעם הבאה שתסרוק אותו הוא יזוהה מיד.</p>
+    <div class="card">
+      <label>שם המוצר</label>
+      <input id="np_name" value="${esc(p.name)}" oninput="window._np.name=this.value" placeholder="לדוגמה: גבינה לבנה 9% תנובה">
+      <p class="xs muted" style="margin:8px 0 2px">ערכים ל־100 גרם (לרוב מופיע על האריזה):</p>
+      <div class="field2">
+        <div><label>קלוריות</label><input id="np_cal" type="number" inputmode="numeric" oninput="window._np.cal=this.value" placeholder="חובה"></div>
+        <div><label>חלבון (גר')</label><input id="np_pr" type="number" inputmode="numeric" oninput="window._np.pr=this.value"></div>
+      </div>
+      <div class="field2">
+        <div><label>פחמימות (גר')</label><input id="np_c" type="number" inputmode="numeric" oninput="window._np.c=this.value"></div>
+        <div><label>שומן (גר')</label><input id="np_f" type="number" inputmode="numeric" oninput="window._np.f=this.value"></div>
+      </div>
+    </div>
+    <button class="btn" onclick="saveNewProduct()">המשך לבחירת כמות</button>
+    <button class="btn sec" style="margin-top:8px" onclick="setAddTab('barcode')">חזרה לסריקה</button>`;
+}
+function saveNewProduct(){
+  const p=window._np; if(!p) return;
+  if(!p.name.trim()){ toast("נא להזין שם מוצר"); return; }
+  const cal=+p.cal; if(!cal){ toast("נא להזין קלוריות ל־100 גרם"); return; }
+  const f=[p.name.trim(),"📦",Math.round(cal),+p.pr||0,+p.c||0,+p.f||0];
+  S.barcodes[p.code]=f; save();            // learn it
+  window._gramTarget={ f };
+  window._np=null;
+  askGrams(f[0],"📦");
 }
 function photoPanel(){
   if(window._aiBusy) return `<div class="card center"><div style="margin:14px"><div class="spin" style="border-color:rgba(106,168,79,.3);border-top-color:var(--green);margin:0 auto 12px"></div>מנתח את התמונה...</div><div class="muted sm">מזהה מאכלים ומחשב קלוריות</div></div>`;
