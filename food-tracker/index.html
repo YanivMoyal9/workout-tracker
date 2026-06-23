@@ -166,7 +166,7 @@ const DEFAULT = {
   log: {},                       // { "YYYY-MM-DD": [items] }
   water: {},                     // { "YYYY-MM-DD": ml }
   weights: [],                   // [{date,kg}]
-  settings: { apiKey:"", dark:false, model:"claude-opus-4-8" },
+  settings: { apiKey:"", apiUrl:"", dark:false, model:"claude-opus-4-8" },
   tab: "home",
   viewDate: todayISO()
 };
@@ -797,15 +797,23 @@ function addMeal(idx){
   addItem({ name:m[0], emoji:m[1], grams:0, calories:m[2], protein:m[3], carbs:m[4], fat:m[5], source:"meal" });
   toast("נוסף ✓");
 }
+/* AI endpoint: custom server (e.g. Azure proxy / CLI bridge) or Anthropic direct.
+   Whether the user enters the root URL or the full path, resolve to .../v1/messages */
+function aiEndpoint(){
+  let u=(S.settings.apiUrl||"https://api.anthropic.com").trim().replace(/\/+$/,"");
+  if(!/\/v1\/messages$/.test(u)) u+="/v1/messages";
+  return u;
+}
+function aiConfigured(){ return !!(S.settings.apiKey || S.settings.apiUrl); }
 async function aiMealIdea(){
-  if(!S.settings.apiKey){ toast("נא להוסיף מפתח API בהגדרות"); closeSheet(); go('settings'); return; }
+  if(!aiConfigured()){ toast("נא להוסיף מפתח API או כתובת שרת בהגדרות"); closeSheet(); go('settings'); return; }
   const t=S.targets, sum=sumDay(), left=t.cal-sum.cal;
   document.getElementById("sheet").innerHTML=`<div class="handle"></div>
     <div class="card center"><div class="spin" style="border-color:rgba(106,168,79,.3);border-top-color:var(--green);margin:14px auto 12px"></div>חושב על ארוחה מתאימה...</div>`;
   openSheet();
   try {
     const prompt=`נותרו לי היום ${left} קלוריות לאכול. אכלתי עד כה ${sum.p} גרם חלבון מתוך יעד יומי של ${t.p} גרם. אני בתהליך ירידה במשקל. הצע רעיון אחד לארוחה בריאה, טעימה ופשוטה בעברית שמתאים לתקציב הקלוריות הזה ועשיר בחלבון. כתוב בקצרה: שם הארוחה, רשימת מרכיבים עם כמויות, וערך קלורי מוערך. עד 120 מילים.`;
-    const r=await fetch("https://api.anthropic.com/v1/messages",{
+    const r=await fetch(aiEndpoint(),{
       method:"POST",
       headers:{"content-type":"application/json","x-api-key":S.settings.apiKey,
         "anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
@@ -979,7 +987,7 @@ function photoPanel(){
     <button class="btn" onclick="addAiItems()">הוסף ${r.items.length} פריטים ליום</button>
     <button class="btn sec" style="margin-top:8px" onclick="window._aiResult=null;renderAddSheet()">צלם שוב</button>`;
   }
-  const hasKey = !!S.settings.apiKey;
+  const hasKey = aiConfigured();
   return `<div class="card center" style="padding:26px 16px">
       <div style="font-size:46px">📸</div>
       <div class="b" style="margin:8px 0 4px">צלם את הצלחת</div>
@@ -1098,7 +1106,7 @@ function pickPhoto(){
   inp.click();
 }
 async function handlePhoto(file){
-  if(!S.settings.apiKey){ toast("נא להוסיף מפתח API בהגדרות"); return; }
+  if(!aiConfigured()){ toast("נא להוסיף מפתח API או כתובת שרת בהגדרות"); return; }
   window._aiBusy=true; renderAddSheet();
   try {
     const {b64, media} = await downscale(file);
@@ -1148,7 +1156,7 @@ async function analyzeFood(b64, media){
   const prompt = `אתה תזונאי מומחה. בתמונה מופיע אוכל. זהה כל מאכל/מנה נפרדים בצלחת.
 לכל פריט החזר: שם בעברית, אימוג'י מתאים, הערכת משקל בגרמים, וערכים תזונתיים (קלוריות, חלבון, פחמימות, שומן) למנה כפי שהיא נראית בתמונה (לא ל-100 גרם).
 שדה confidence: high אם ברור, medium אם סביר, low אם ניחוש. בשדה note כתוב משפט קצר בעברית עם טיפ או הסתייגות. אם אין אוכל בתמונה, החזר items ריק והסבר ב-note.`;
-  const resp = await fetch("https://api.anthropic.com/v1/messages",{
+  const resp = await fetch(aiEndpoint(),{
     method:"POST",
     headers:{
       "content-type":"application/json",
@@ -1293,6 +1301,9 @@ function renderSettings(){
       <p class="sub" style="margin:0 0 4px">כדי לזהות קלוריות מצילום, נדרש מפתח Anthropic API. הוא נשמר רק במכשיר שלך.</p>
       <label>מפתח API</label>
       <input id="apikey" type="password" placeholder="sk-ant-..." value="${esc(S.settings.apiKey||'')}">
+      <label>כתובת שרת מותאמת (אופציונלי)</label>
+      <input id="apiurl" type="url" inputmode="url" placeholder="https://api.anthropic.com" value="${esc(S.settings.apiUrl||'')}">
+      <p class="xs muted" style="margin:4px 0 0">להשארה ריק = שרת Anthropic הרשמי. למשתמשי גשר/פרוקסי: הזן את כתובת ה־HTTPS (האפליקציה תוסיף <code>/v1/messages</code> לבד). הגשר חייב להחזיר כותרות CORS ולקבל פורמט Anthropic.</p>
       <label>מודל</label>
       <select id="model">
         <option value="claude-opus-4-8" ${S.settings.model==='claude-opus-4-8'?'selected':''}>Claude Opus 4.8 (מומלץ — מדויק)</option>
@@ -1317,6 +1328,7 @@ function renderSettings(){
 }
 function saveKey(){
   S.settings.apiKey=document.getElementById("apikey").value.trim();
+  S.settings.apiUrl=document.getElementById("apiurl").value.trim();
   S.settings.model=document.getElementById("model").value;
   save(); toast("נשמר ✓");
 }
