@@ -1060,7 +1060,8 @@ function photoPanel(){
           <input type="number" inputmode="numeric" value="${Math.round(i.grams)}" onchange="setAiGrams(${idx},this.value)" style="width:60px;height:28px;text-align:center;border:1px solid var(--line);border-radius:8px;background:transparent;color:inherit;font-weight:700">
           <button onclick="bumpAiGrams(${idx},10)" style="width:28px;height:28px;border-radius:8px;border:1px solid var(--line);background:var(--card2,transparent);font-size:18px;line-height:1;color:inherit">＋</button>
           <span class="muted xs">גר'</span>
-        </div></div>
+        </div>
+        ${i.basis?`<div class="muted xs" style="margin-top:5px">🧮 ${esc(i.basis)}</div>`:""}</div>
         <div class="kc">${Math.round(i.calories)}</div>
       </div>`).join("")}
     </div>
@@ -1250,28 +1251,33 @@ const FOOD_SCHEMA = {
       type:"object", additionalProperties:false,
       properties:{
         name:{type:"string"}, emoji:{type:"string"},
-        grams:{type:"number"}, calories:{type:"number"},
-        protein:{type:"number"}, carbs:{type:"number"}, fat:{type:"number"},
         per100:{ type:"object", additionalProperties:false,
           properties:{ cal:{type:"number"}, protein:{type:"number"}, carbs:{type:"number"}, fat:{type:"number"} },
           required:["cal","protein","carbs","fat"] },
+        count:{type:"number"},          // visible discrete pieces (0 if not countable) — model reasons before weight
+        basis:{type:"string"},          // short explanation of how grams was derived
+        grams:{type:"number"}, calories:{type:"number"},
+        protein:{type:"number"}, carbs:{type:"number"}, fat:{type:"number"},
         confidence:{type:"string", enum:["high","medium","low"]}
       },
-      required:["name","emoji","grams","calories","protein","carbs","fat","per100","confidence"]
+      required:["name","emoji","per100","count","basis","grams","calories","protein","carbs","fat","confidence"]
     }},
     note:{type:"string"}
   },
   required:["items","note"]
 };
 async function analyzeFood(b64, media){
-  const prompt = `אתה תזונאי מומחה. בתמונה מופיע אוכל. זהה כל מאכל/מנה נפרדים בצלחת.
-לכל פריט החזר:
+  const prompt = `אתה תזונאי מומחה המנתח תמונת אוכל. זהה כל מאכל נפרד, ולכל אחד מלא את השדות לפי הסדר — חשוב לנמק לפני שאתה קובע משקל:
+
 - name: שם בעברית. emoji: אימוג'י מתאים.
-- per100: ערכים תזונתיים תקניים ל-100 גרם של אותו מאכל (cal, protein, carbs, fat). אלה נתונים ידועים — היה מדויק.
-- grams: הערכת משקל המנה בתמונה. שים לב: אומדן משקל מתמונה קשה ולא מדויק — היה שמרן, נטה לכיוון הנמוך, ואל תנפח כמויות. אם אין עצם ייחוס לגודל המנה ציין זאת ב-note.
-- calories, protein, carbs, fat: עבור המנה כפי שנראית, כלומר per100 כפול grams חלקי 100.
-- confidence: מתייחס אך ורק לוודאות זיהוי המאכל (לא למשקל): high אם ברור מהו, medium אם סביר, low אם לא בטוח.
-בשדה note כתוב משפט קצר בעברית, וציין שכדאי לשקול את המנה ולתקן את המשקל לדיוק מרבי. אם אין אוכל בתמונה, החזר items ריק והסבר ב-note.`;
+- per100: ערכים תזונתיים תקניים ל-100 גרם של המאכל (cal, protein, carbs, fat). אלה נתונים ידועים — דייק בהם.
+- count: אם המאכל ניתן לספירה (פנה, ניוקי, קציצות, נאגטס, פרוסות, אגוזים, תותים וכו') — ספור את מספר החתיכות הנראות בתמונה. אם לא ניתן לספירה (אורז, פירה, רוטב) — החזר 0.
+- basis: משפט קצר שמסביר איך חישבת את המשקל. אם ספרת — הראה את החשבון, למשל "כ-12 חתיכות פנה מבושל × ~4 גר' לחתיכה ≈ 50 גר'". אם לא ספרת — ציין לפי מה אמדת (עצם ייחוס בתמונה: מזלג ~19 ס"מ, כף ~17 ס"מ, צלחת ~27 ס"מ, יד; או "אין עצם ייחוס").
+- grams: משקל המנה בפועל לפי החישוב ב-basis. כללי זהב: (1) אם ספרת חתיכות — חשב מהספירה, אל תנחש "מנה סטנדרטית". (2) הטעות הנפוצה היא להניח מנה רגילה כשבפועל הכמות קטנה — היה שמרן ונטה כלפי מטה. (3) אל תנפח.
+- calories, protein, carbs, fat: per100 כפול grams חלקי 100.
+- confidence: ודאות זיהוי המאכל בלבד (לא המשקל): high אם ברור מהו, medium אם סביר, low אם לא בטוח.
+
+בשדה note כתוב משפט קצר, וציין שכדאי לשקול את המנה ולתקן את המשקל לדיוק מרבי. אם אין אוכל בתמונה, החזר items ריק.`;
   const resp = await fetch(aiEndpoint(),{
     method:"POST",
     headers:{
@@ -1282,7 +1288,7 @@ async function analyzeFood(b64, media){
     },
     body:JSON.stringify({
       model:S.settings.model||"claude-opus-4-8",
-      max_tokens:1024,
+      max_tokens:1500,
       messages:[{role:"user",content:[
         {type:"image",source:{type:"base64",media_type:media,data:b64}},
         {type:"text",text:prompt}
