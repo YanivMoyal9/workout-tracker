@@ -962,7 +962,8 @@ function openAdd(){
 function setAddTab(t){ stopScanner(); window._addTab=t; renderAddSheet(); if(t==="barcode") setTimeout(startScanner,60); }
 function renderAddSheet(){
   const tab=window._addTab;
-  const seg=(id,l)=>`<button class="${tab===id?'on':''}" onclick="setAddTab('${id}')">${l}</button>`;
+  // compact, never-clipped 5-tab bar (inline styles override the wider default .seg button rule)
+  const seg=(id,l)=>`<button class="${tab===id?'on':''}" onclick="setAddTab('${id}')" style="font-size:11px;padding:8px 2px;white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis">${l}</button>`;
   let body="";
   if(tab==="recent") body=recentsPanel();
   else if(tab==="photo") body=photoPanel();
