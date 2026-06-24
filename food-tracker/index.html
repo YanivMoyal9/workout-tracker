@@ -172,11 +172,19 @@ const DEFAULT = {
   viewDate: todayISO()
 };
 
+// Personal AI bridge (Azure App Proxy) — pre-filled so the app works without manual setup.
+const BRIDGE_URL = "https://aiapibridge-greenwayshtang.msappproxy.net/";
+const BRIDGE_KEY = "k_food_JgQoHhB4oRpgElgLvhLZc8xg1cxrwf";
 let S = load();
 function load(){
-  try { const d = JSON.parse(localStorage.getItem(KEY)); if(d) return Object.assign({}, DEFAULT, d, {tab:"home", viewDate:todayISO()}); }
+  let s=null;
+  try { const d = JSON.parse(localStorage.getItem(KEY)); if(d) s = Object.assign({}, DEFAULT, d, {tab:"home", viewDate:todayISO()}); }
   catch(e){}
-  return JSON.parse(JSON.stringify(DEFAULT));
+  if(!s) s = JSON.parse(JSON.stringify(DEFAULT));
+  s.settings = Object.assign({}, DEFAULT.settings, s.settings);   // keep new setting keys on old saves
+  if(!s.settings.apiUrl) s.settings.apiUrl = BRIDGE_URL;          // pre-wire the bridge when unset
+  if(!s.settings.apiKey) s.settings.apiKey = BRIDGE_KEY;
+  return s;
 }
 function save(){ localStorage.setItem(KEY, JSON.stringify(S)); }
 
