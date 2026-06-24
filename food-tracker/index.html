@@ -1555,6 +1555,8 @@ function renderSettings(){
         <option value="claude-sonnet-4-6" ${S.settings.model==='claude-sonnet-4-6'?'selected':''}>Claude Sonnet 4.6 (מהיר וזול יותר)</option>
       </select>
       <button class="btn" style="margin-top:12px" onclick="saveKey()">שמור</button>
+      <button class="btn sec" style="margin-top:8px" onclick="testConn()">🔌 בדוק חיבור ל-AI</button>
+      <div id="conntest" class="xs" style="margin-top:8px;white-space:pre-wrap;word-break:break-word"></div>
       <p class="xs muted" style="margin-top:10px">מפתח אפשר להפיק ב־console.anthropic.com. הקריאה ל־API מתבצעת ישירות מהדפדפן — מתאים לשימוש אישי.</p>
     </div>
 
@@ -1591,7 +1593,34 @@ function saveKey(){
   if(nk) S.settings.nixKey=nk.value.trim();
   save(); toast("נשמר ✓");
 }
-function toggleDark(){ S.settings.dark=!S.settings.dark; save(); render(); }
+async function testConn(){
+  // First persist whatever is in the fields, then probe the bridge in escalating steps.
+  saveKey();
+  const out=document.getElementById("conntest"); if(!out) return;
+  const head={ "content-type":"application/json","x-api-key":S.settings.apiKey,
+    "anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true" };
+  const model=S.settings.model||"claude-opus-4-8";
+  // a 1x1 transparent PNG — minimal valid image input
+  const PX="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
+  const probes=[
+    ["1. טקסט בלבד", { model, max_tokens:16, messages:[{role:"user",content:"ענה במילה אחת: OK"}] }],
+    ["2. טקסט + פלט מובנה", { model, max_tokens:64, messages:[{role:"user",content:'החזר JSON: {"ok":true}'}],
+      output_config:{format:{type:"json_schema",schema:{type:"object",additionalProperties:false,properties:{ok:{type:"boolean"}},required:["ok"]}}} }],
+    ["3. תמונה זעירה", { model, max_tokens:16, messages:[{role:"user",content:[
+      {type:"image",source:{type:"base64",media_type:"image/png",data:PX}},{type:"text",text:"ענה: OK"}]}] }],
+  ];
+  out.textContent="בודק...";
+  let log="";
+  for(const [label,body] of probes){
+    try{
+      const r=await fetch(aiEndpoint(),{method:"POST",headers:head,body:JSON.stringify(body)});
+      const t=await r.text();
+      log += `${r.ok?"✅":"❌"} ${label} — ${r.status}\n`;
+      if(!r.ok){ log += `   ${t.slice(0,200)}\n`; out.textContent=log; break; }   // stop at first failure
+    }catch(e){ log += `❌ ${label} — ${e.message||e}\n`; out.textContent=log; break; }
+    out.textContent=log;
+  }
+}
 function editProfile(){ window._ob={...S.profile}; S.profile=null; save(); render(); window.scrollTo(0,0); }
 function resetAll(){
   if(confirm("למחוק את כל הנתונים? פעולה זו אינה הפיכה.")){
