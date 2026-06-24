@@ -152,7 +152,7 @@
 
 <div class="scrim" id="scrim"><div class="sheet" id="sheet"></div></div>
 <div class="toast" id="toast"></div>
-<input type="file" id="filein" accept="image/*" capture="environment" style="display:none" />
+<input type="file" id="filein" accept="image/*" multiple style="display:none" />
 
 <script>
 /* ============================ Data layer ============================ */
@@ -1131,7 +1131,7 @@ function saveNewProduct(){
   askGrams(f[0],"📦");
 }
 function photoPanel(){
-  if(window._aiBusy) return `<div class="card center"><div style="margin:14px"><div class="spin" style="border-color:rgba(106,168,79,.3);border-top-color:var(--green);margin:0 auto 12px"></div>מנתח את התמונה...</div><div class="muted sm">מזהה מאכלים ומחשב קלוריות</div></div>`;
+  if(window._aiBusy) return `<div class="card center"><div style="margin:14px"><div class="spin" style="border-color:rgba(106,168,79,.3);border-top-color:var(--green);margin:0 auto 12px"></div>מנתח את התמונות...</div><div class="muted sm">מזהה מאכלים ומחשב קלוריות</div></div>`;
   if(window._aiResult){
     const r=window._aiResult;
     const tot=r.items.reduce((a,i)=>({cal:a.cal+i.calories,p:a.p+i.protein,c:a.c+i.carbs,f:a.f+i.fat}),{cal:0,p:0,c:0,f:0});
@@ -1156,15 +1156,28 @@ function photoPanel(){
     <div class="card center"><div class="muted sm">סה״כ לארוחה</div><div style="font-size:30px;font-weight:800">${Math.round(tot.cal)} קל'</div>
       <div class="muted sm">חלבון ${Math.round(tot.p)} · פחמימה ${Math.round(tot.c)} · שומן ${Math.round(tot.f)} גר'</div></div>
     <button class="btn" onclick="addAiItems()">הוסף ${r.items.length} פריטים ליום</button>
-    <button class="btn sec" style="margin-top:8px" onclick="window._aiResult=null;renderAddSheet()">צלם שוב</button>`;
+    <button class="btn sec" style="margin-top:8px" onclick="resetPhotoFlow();renderAddSheet()">צלם שוב</button>`;
   }
   const hasKey = aiConfigured();
-  return `<div class="card center" style="padding:26px 16px">
-      <div style="font-size:46px">📸</div>
-      <div class="b" style="margin:8px 0 4px">צלם את הצלחת</div>
-      <div class="muted sm" style="margin-bottom:14px">הבינה המלאכותית תזהה את המאכלים ותעריך כמה קלוריות, חלבון, פחמימות ושומן הוספת.</div>
-      <button class="btn" onclick="pickPhoto()">📷 צלם או בחר תמונה</button>
-      ${hasKey?"":`<p class="sub" style="margin-top:12px">🔑 כדי להפעיל זיהוי מתמונה צריך מפתח Anthropic API. <a onclick="closeSheet();go('settings')">להוספה בהגדרות ›</a></p>`}
+  const photos = window._photos||[];
+  const note = window._photoNote||"";
+  const thumbs = photos.length ? `<div class="row" style="flex-wrap:wrap;gap:8px;margin:2px 0 12px">
+      ${photos.map((p,idx)=>`<div style="position:relative">
+        <img src="data:${p.media};base64,${p.b64}" style="width:74px;height:74px;object-fit:cover;border-radius:10px;border:1px solid var(--line)">
+        <button onclick="removePhoto(${idx})" style="position:absolute;top:-7px;inset-inline-end:-7px;width:22px;height:22px;border-radius:50%;border:none;background:#000;color:#fff;font-size:12px;line-height:1;cursor:pointer">✕</button>
+      </div>`).join("")}
+    </div>` : "";
+  const analyzeLbl = photos.length===1 ? "🔍 נתח תמונה" : `🔍 נתח ${photos.length} תמונות`;
+  return `<div class="card" style="padding:18px 16px">
+      ${photos.length ? "" : `<div class="center"><div style="font-size:46px">📸</div>
+        <div class="b" style="margin:8px 0 4px">צלם את הצלחת</div>
+        <div class="muted sm" style="margin-bottom:14px">אפשר להוסיף כמה תמונות (זוויות שונות או מרכיבים נפרדים) ולכתוב תיאור — וה-AI ינתח את הכול יחד לדיוק מרבי.</div></div>`}
+      ${thumbs}
+      <button class="btn sec" onclick="pickPhoto()">📷 ${photos.length?"הוסף תמונה נוספת":"צלם או בחר תמונות"}</button>
+      <label style="margin-top:14px">תיאור חופשי (לא חובה)</label>
+      <textarea id="ainote" rows="2" oninput="window._photoNote=this.value" placeholder="למשל: חזה עוף בגריל, אורז כ-200 גרם, יש גם כף שמן זית" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:11px;background:transparent;color:inherit;font-family:inherit;font-size:14px;resize:vertical;box-sizing:border-box">${esc(note)}</textarea>
+      ${photos.length ? `<button class="btn" style="margin-top:12px" onclick="runAnalysis()">${analyzeLbl}</button>` : ""}
+      ${hasKey?"":`<p class="sub" style="margin-top:12px">🔑 כדי להפעיל זיהוי מתמונה צריך מפתח API. <a onclick="closeSheet();go('settings')">להוספה בהגדרות ›</a></p>`}
     </div>`;
 }
 function searchPanel(){
@@ -1290,18 +1303,31 @@ function addAiItems(){
 }
 
 /* ---------- Photo → AI ---------- */
+const MAX_PHOTOS=5;
+function resetPhotoFlow(){ window._aiResult=null; window._photos=[]; window._photoNote=""; }
 function pickPhoto(){
   const inp=document.getElementById("filein");
   inp.value="";
-  inp.onchange=()=>{ if(inp.files&&inp.files[0]) handlePhoto(inp.files[0]); };
+  inp.onchange=async ()=>{ if(inp.files&&inp.files.length) await addPhotos([...inp.files]); };
   inp.click();
 }
-async function handlePhoto(file){
+async function addPhotos(files){
   if(!aiConfigured()){ toast("נא להוסיף מפתח API או כתובת שרת בהגדרות"); return; }
+  window._photos=window._photos||[];
+  for(const f of files){
+    if(window._photos.length>=MAX_PHOTOS){ toast(`עד ${MAX_PHOTOS} תמונות`); break; }
+    try { window._photos.push(await downscale(f)); }
+    catch(e){ toast("תמונה לא נטענה"); }
+  }
+  renderAddSheet();
+}
+function removePhoto(i){ (window._photos||[]).splice(i,1); renderAddSheet(); }
+async function runAnalysis(){
+  const photos=window._photos||[];
+  if(!photos.length){ toast("הוסף לפחות תמונה אחת"); return; }
   window._aiBusy=true; renderAddSheet();
   try {
-    const {b64, media} = await downscale(file);
-    const result = await analyzeFood(b64, media);
+    const result = await analyzeFood(photos, window._photoNote||"");
     (result.items||[]).forEach(i=>{
       // ensure we have per-100g values so the editable weight can recalculate
       if(!i.per100 || !(+i.per100.cal)){
@@ -1357,8 +1383,8 @@ const FOOD_SCHEMA = {
   },
   required:["items","note"]
 };
-async function analyzeFood(b64, media){
-  const prompt = `אתה תזונאי מומחה המנתח תמונת אוכל. זהה כל מאכל נפרד, ולכל אחד מלא את השדות לפי הסדר — חשוב לנמק לפני שאתה קובע משקל:
+async function analyzeFood(photos, note){
+  let prompt = `אתה תזונאי מומחה המנתח תמונת אוכל. זהה כל מאכל נפרד, ולכל אחד מלא את השדות לפי הסדר — חשוב לנמק לפני שאתה קובע משקל:
 
 - name: שם בעברית. emoji: אימוג'י מתאים.
 - per100: ערכים תזונתיים תקניים ל-100 גרם של המאכל (cal, protein, carbs, fat). אלה נתונים ידועים — דייק בהם.
@@ -1369,6 +1395,8 @@ async function analyzeFood(b64, media){
 - confidence: ודאות זיהוי המאכל בלבד (לא המשקל): high אם ברור מהו, medium אם סביר, low אם לא בטוח.
 
 בשדה note כתוב משפט קצר, וציין שכדאי לשקול את המנה ולתקן את המשקל לדיוק מרבי. אם אין אוכל בתמונה, החזר items ריק.`;
+  if(photos.length>1) prompt += `\n\nשים לב: צורפו ${photos.length} תמונות של אותה ארוחה (זוויות שונות או מרכיבים נפרדים). שלב את כולן לרשימת פריטים אחת, ואם אותו מאכל מופיע בכמה תמונות אל תספור אותו פעמיים.`;
+  if(note && note.trim()) prompt += `\n\nתיאור מהמשתמש — מידע אמין, השתמש בו לזיהוי ולכמויות: "${note.trim()}"`;
   const resp = await fetch(aiEndpoint(),{
     method:"POST",
     headers:{
@@ -1379,9 +1407,9 @@ async function analyzeFood(b64, media){
     },
     body:JSON.stringify({
       model:S.settings.model||"claude-opus-4-8",
-      max_tokens:1500,
+      max_tokens:2000,
       messages:[{role:"user",content:[
-        {type:"image",source:{type:"base64",media_type:media,data:b64}},
+        ...photos.map(p=>({type:"image",source:{type:"base64",media_type:p.media,data:p.b64}})),
         {type:"text",text:prompt}
       ]}],
       output_config:{format:{type:"json_schema",schema:FOOD_SCHEMA}}
@@ -1584,7 +1612,7 @@ function importData(){
 
 /* ---------- sheet utils ---------- */
 function openSheet(){ document.getElementById("scrim").classList.add("open"); }
-function closeSheet(){ stopScanner(); document.getElementById("scrim").classList.remove("open"); window._aiResult=null; window._aiBusy=false; }
+function closeSheet(){ stopScanner(); document.getElementById("scrim").classList.remove("open"); window._aiResult=null; window._aiBusy=false; window._photos=[]; window._photoNote=""; }
 document.getElementById("scrim").addEventListener("click",e=>{ if(e.target.id==="scrim") closeSheet(); });
 
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
