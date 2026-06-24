@@ -198,7 +198,7 @@ let _sb=null, _sbUser=null, _pushT=null, _pullDone=false, _syncMsg="";
 function sbClient(){
   if(_sb) return _sb;
   if(!window.supabase || !SUPA_URL || !SUPA_KEY) return null;
-  try { _sb = window.supabase.createClient(SUPA_URL, SUPA_KEY, {auth:{persistSession:true, autoRefreshToken:true}}); }
+  try { _sb = window.supabase.createClient(SUPA_URL, SUPA_KEY, {auth:{persistSession:true, autoRefreshToken:true, detectSessionInUrl:true}}); }
   catch(e){ return null; }
   return _sb;
 }
