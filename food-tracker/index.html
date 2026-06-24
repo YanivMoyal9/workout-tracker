@@ -1397,24 +1397,22 @@ async function analyzeFood(photos, note){
 בשדה note כתוב משפט קצר, וציין שכדאי לשקול את המנה ולתקן את המשקל לדיוק מרבי. אם אין אוכל בתמונה, החזר items ריק.`;
   if(photos.length>1) prompt += `\n\nשים לב: צורפו ${photos.length} תמונות של אותה ארוחה (זוויות שונות או מרכיבים נפרדים). שלב את כולן לרשימת פריטים אחת, ואם אותו מאכל מופיע בכמה תמונות אל תספור אותו פעמיים.`;
   if(note && note.trim()) prompt += `\n\nתיאור מהמשתמש — מידע אמין, השתמש בו לזיהוי ולכמויות: "${note.trim()}"`;
-  const resp = await fetch(aiEndpoint(),{
-    method:"POST",
-    headers:{
-      "content-type":"application/json",
-      "x-api-key":S.settings.apiKey,
-      "anthropic-version":"2023-06-01",
-      "anthropic-dangerous-direct-browser-access":"true"
-    },
-    body:JSON.stringify({
-      model:S.settings.model||"claude-opus-4-8",
-      max_tokens:2000,
-      messages:[{role:"user",content:[
-        ...photos.map(p=>({type:"image",source:{type:"base64",media_type:p.media,data:p.b64}})),
-        {type:"text",text:prompt}
-      ]}],
-      output_config:{format:{type:"json_schema",schema:FOOD_SCHEMA}}
-    })
-  });
+  // JSON contract — used as a fallback when the server can't enforce structured output
+  prompt += `\n\nהחזר JSON תקין בלבד, ללא טקסט מסביב, במבנה המדויק:
+{"items":[{"name":"","emoji":"","per100":{"cal":0,"protein":0,"carbs":0,"fat":0},"count":0,"basis":"","grams":0,"calories":0,"protein":0,"carbs":0,"fat":0,"confidence":"high"}],"note":""}`;
+  const content=[
+    ...photos.map(p=>({type:"image",source:{type:"base64",media_type:p.media,data:p.b64}})),
+    {type:"text",text:prompt}
+  ];
+  const headers={ "content-type":"application/json", "x-api-key":S.settings.apiKey,
+    "anthropic-version":"2023-06-01", "anthropic-dangerous-direct-browser-access":"true" };
+  const call=(structured)=>{
+    const body={ model:S.settings.model||"claude-opus-4-8", max_tokens:1500, messages:[{role:"user",content}] };
+    if(structured) body.output_config={format:{type:"json_schema",schema:FOOD_SCHEMA}};
+    return fetch(aiEndpoint(),{ method:"POST", headers, body:JSON.stringify(body) });
+  };
+  let resp = await call(true);
+  if(!resp.ok && resp.status>=500) resp = await call(false);   // bridge may not support output_config / structured outputs
   if(!resp.ok){
     let body=""; try{ body=await resp.text(); }catch(_){}
     let m=`שגיאה ${resp.status} מהשרת`;
@@ -1425,9 +1423,15 @@ async function analyzeFood(photos, note){
   const data=await resp.json();
   if(data.stop_reason==="refusal") throw new Error("הבקשה נדחתה. נסה תמונה אחרת.");
   const txt=(data.content.find(b=>b.type==="text")||{}).text||"{}";
-  const parsed=JSON.parse(txt);
+  const parsed=parseLooseJSON(txt);
   if(!parsed.items||!parsed.items.length) throw new Error(parsed.note||"לא זוהה אוכל בתמונה");
   return parsed;
+}
+function parseLooseJSON(s){
+  try { return JSON.parse(s); } catch(_){}
+  const a=s.indexOf("{"), b=s.lastIndexOf("}");          // tolerate prose around the JSON
+  if(a>=0 && b>a){ try { return JSON.parse(s.slice(a,b+1)); } catch(_){} }
+  return {};
 }
 
 /* ---------- Weight ---------- */
