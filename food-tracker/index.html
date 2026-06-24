@@ -167,6 +167,7 @@ const DEFAULT = {
   water: {},                     // { "YYYY-MM-DD": ml }
   weights: [],                   // [{date,kg}]
   barcodes: {},                  // { "<code>": [name,emoji,cal,p,c,f] per 100g — learned products }
+  recents: {},                   // { "<name>": {emoji,per100,grams,cal,protein,carbs,fat,count,last,pin} } — my foods
   settings: { apiKey:"", apiUrl:"", nixId:"", nixKey:"", dark:false, model:"claude-opus-4-8" },
   tab: "home",
   viewDate: todayISO()
@@ -952,8 +953,9 @@ function renderEditSheet(){
 
 /* ---------- Add food sheet ---------- */
 function openAdd(){
-  window._addTab = window._addTab || "photo";
-  window._aiResult = null;
+  // open straight to "my foods" when there are saved foods — the fast daily path
+  window._addTab = Object.keys(S.recents||{}).length ? "recent" : "photo";
+  window._aiResult = null; window._rq="";
   renderAddSheet();
   openSheet();
 }
@@ -962,14 +964,15 @@ function renderAddSheet(){
   const tab=window._addTab;
   const seg=(id,l)=>`<button class="${tab===id?'on':''}" onclick="setAddTab('${id}')">${l}</button>`;
   let body="";
-  if(tab==="photo") body=photoPanel();
+  if(tab==="recent") body=recentsPanel();
+  else if(tab==="photo") body=photoPanel();
   else if(tab==="barcode") body=barcodePanel();
   else if(tab==="search") body=searchPanel();
   else body=manualPanel();
   document.getElementById("sheet").innerHTML = `
     <div class="handle"></div>
     <div class="row between"><h2 style="margin:2px">הוספת אוכל</h2></div>
-    <div class="seg" style="font-size:13px">${seg("photo","📷 צילום")}${seg("barcode","📊 ברקוד")}${seg("search","🔍 חיפוש")}${seg("manual","✏️ ידני")}</div>
+    <div class="seg" style="font-size:12px">${seg("recent","🧾 שלי")}${seg("photo","📷 צילום")}${seg("barcode","📊 ברקוד")}${seg("search","🔍 חיפוש")}${seg("manual","✏️ ידני")}</div>
     ${body}`;
 }
 function barcodePanel(){
@@ -1180,6 +1183,56 @@ function photoPanel(){
       ${hasKey?"":`<p class="sub" style="margin-top:12px">🔑 כדי להפעיל זיהוי מתמונה צריך מפתח API. <a onclick="closeSheet();go('settings')">להוספה בהגדרות ›</a></p>`}
     </div>`;
 }
+/* ---------- My foods (recent / frequent) — one-tap re-add ---------- */
+function recentsPanel(){
+  if(!Object.keys(S.recents||{}).length){
+    return `<div class="card center" style="padding:26px 16px">
+      <div style="font-size:42px">🧾</div>
+      <div class="b" style="margin:8px 0 4px">עוד אין מאכלים שמורים</div>
+      <div class="muted sm">כל מאכל שתוסיף (צילום, ברקוד, חיפוש או ידני) יישמר כאן אוטומטית — ותוכל להוסיף אותו שוב בנגיעה אחת, בלי לחפש או לצלם מחדש.</div></div>`;
+  }
+  const q=(window._rq||"").trim();
+  return `<input id="rin" placeholder="סנן מהמאכלים שלי..." value="${esc(q)}" oninput="onRecent(this.value)">
+    <p class="xs muted" style="margin:8px 2px 0">⭐ הצמד מאכלים קבועים לראש הרשימה · ＋ מוסיף באותה כמות כמו פעם קודמת</p>
+    <div class="card" id="reclist" style="padding:4px 16px;margin-top:8px">${recentRows()}</div>`;
+}
+function recentRows(){
+  const q=(window._rq||"").trim();
+  let list=Object.entries(S.recents||{}).map(([k,r])=>({k,...r}));
+  if(q) list=list.filter(r=>(r.name||"").includes(q));
+  list.sort((a,b)=> (b.pin?1:0)-(a.pin?1:0) || (b.count||0)-(a.count||0) || (b.last||0)-(a.last||0));
+  list=list.slice(0,50);
+  window._recentList=list;
+  if(!list.length) return `<div class="empty">לא נמצא מאכל תואם</div>`;
+  return list.map((r,i)=>`<div class="item">
+      <button onclick="togglePin(${i})" title="הצמד" style="background:none;border:none;font-size:16px;cursor:pointer;padding:0 2px;color:inherit">${r.pin?"⭐":"☆"}</button>
+      <div class="em">${r.emoji||"🍽️"}</div>
+      <div class="grow" onclick="quickAddRecent(${i})" style="cursor:pointer">
+        <div class="nm">${esc(r.name)}</div>
+        <div class="meta">${r.grams?Math.round(r.grams)+" גר' · ":""}${Math.round(r.cal||0)} קל' · ח׳ ${Math.round(r.protein||0)} · פ׳ ${Math.round(r.carbs||0)} · ש׳ ${Math.round(r.fat||0)}${(r.count||0)>1?` · נאכל ×${r.count}`:""}</div>
+      </div>
+      <button onclick="quickAddRecent(${i})" style="font-size:24px;color:var(--green);background:none;border:none;cursor:pointer;padding:0 4px">＋</button>
+      <button class="x" onclick="delRecent(${i})">✕</button>
+    </div>`).join("");
+}
+function onRecent(v){ window._rq=v; const el=document.getElementById("reclist"); if(el) el.innerHTML=recentRows(); }
+function quickAddRecent(i){
+  const r=(window._recentList||[])[i]; if(!r) return;
+  addItem({ name:r.name, emoji:r.emoji, grams:+r.grams||0,
+    calories:+r.cal||0, protein:+r.protein||0, carbs:+r.carbs||0, fat:+r.fat||0,
+    per100:r.per100||null, source:"recent" });
+  toast(`נוסף ✓ ${r.name}`);
+}
+function togglePin(i){
+  const r=(window._recentList||[])[i]; if(!r||!S.recents[r.k]) return;
+  S.recents[r.k].pin=!S.recents[r.k].pin; save();
+  const el=document.getElementById("reclist"); if(el) el.innerHTML=recentRows();
+}
+function delRecent(i){
+  const r=(window._recentList||[])[i]; if(!r) return;
+  delete S.recents[r.k]; save();
+  const el=document.getElementById("reclist"); if(el) el.innerHTML=recentRows();
+}
 function searchPanel(){
   const q=(window._q||"").trim();
   const res = q? DB.filter(f=>f[0].includes(q)).slice(0,12) : DB.slice(0,12);
@@ -1274,7 +1327,22 @@ function addManual(){
 function addItem(it){
   it.id=uid(); it.time=Date.now();
   const k=S.viewDate; (S.log[k]=S.log[k]||[]).push(it);
+  rememberFood(it);
   save(); render();
+}
+// Save every logged food into "my foods" so it can be re-added in one tap next time.
+function rememberFood(it){
+  if(!it || !it.name) return;
+  const key=String(it.name).trim(); if(!key) return;
+  S.recents = S.recents || {};
+  const ex = S.recents[key] || {};
+  S.recents[key] = {
+    name:key, emoji:it.emoji||ex.emoji||"🍽️",
+    per100: it.per100 || ex.per100 || null,
+    grams: (+it.grams||0) || ex.grams || 0,
+    cal:+it.calories||0, protein:+it.protein||0, carbs:+it.carbs||0, fat:+it.fat||0,
+    count:(ex.count||0)+1, last:Date.now(), pin:ex.pin||false
+  };
 }
 function aiRecalc(i){
   const g=Math.max(0,+i.grams||0), r=g/100, p=i.per100||{};
@@ -1293,12 +1361,13 @@ function bumpAiGrams(idx,d){
 }
 function addAiItems(){
   const k=S.viewDate; S.log[k]=S.log[k]||[];
-  window._aiResult.items.forEach(i=>S.log[k].push({
-    id:uid(), name:i.name, emoji:i.emoji||"🍽️", grams:Math.round(i.grams),
-    calories:Math.round(i.calories), protein:+(+i.protein).toFixed(1),
-    carbs:+(+i.carbs).toFixed(1), fat:+(+i.fat).toFixed(1), source:"ai", time:Date.now(),
-    per100:i.per100||null
-  }));
+  window._aiResult.items.forEach(i=>{
+    const it={ id:uid(), name:i.name, emoji:i.emoji||"🍽️", grams:Math.round(i.grams),
+      calories:Math.round(i.calories), protein:+(+i.protein).toFixed(1),
+      carbs:+(+i.carbs).toFixed(1), fat:+(+i.fat).toFixed(1), source:"ai", time:Date.now(),
+      per100:i.per100||null };
+    S.log[k].push(it); rememberFood(it);
+  });
   save(); window._aiResult=null; closeSheet(); render(); toast("נוסף ליום ✓");
 }
 
