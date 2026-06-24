@@ -197,17 +197,24 @@ function bmr(p){
 }
 const ACT = { sed:1.2, light:1.375, mod:1.55, high:1.725, athlete:1.9 };
 function tdee(p){ return Math.round(bmr(p) * (ACT[p.activity]||1.2)); }
+// Direction of the goal, inferred from target vs current weight.
+function goalDir(p){
+  const gw=+p.goalWeight, w=+p.weight;
+  if(!gw || Math.abs(gw-w)<0.1) return "maintain";
+  return gw > w ? "gain" : "lose";
+}
 function computeTargets(p){
   const t = tdee(p);
-  const deficit = Math.round((p.rate||0.5) * 7700 / 7); // kcal/day for kg/week
-  let cal = t - deficit;
-  cal = Math.max(cal, p.gender==="m" ? 1500 : 1200); // safety floor
-  // protein 2g per kg target-ish, fat 25% of cal, rest carbs
+  const dir = goalDir(p);
+  const adj = Math.round((p.rate||0.5) * 7700 / 7); // kcal/day for kg/week
+  let cal = dir==="gain" ? t + adj : dir==="lose" ? t - adj : t; // surplus / deficit / maintenance
+  if(dir!=="gain") cal = Math.max(cal, p.gender==="m" ? 1500 : 1200); // safety floor (deficit only)
+  // protein ~1.8g per kg, fat 27% of cal, rest carbs
   const prot = Math.round(p.weight * 1.8);
   const fat = Math.round(cal * 0.27 / 9);
   const carbs = Math.max(0, Math.round((cal - prot*4 - fat*9)/4));
   const water = Math.round(p.weight*35/250)*250; // ~35ml/kg, rounded to cups
-  return { cal: Math.round(cal), p: prot, c: carbs, f: fat, tdee: t, water };
+  return { cal: Math.round(cal), p: prot, c: carbs, f: fat, tdee: t, water, dir };
 }
 function bmi(p){ const m=p.height/100; return +(p.weight/(m*m)).toFixed(1); }
 function bmiCat(v){ return v<18.5?"תת־משקל":v<25?"תקין":v<30?"עודף משקל":"השמנה"; }
@@ -662,9 +669,11 @@ function go(t){ S.tab=t; S.viewDate=todayISO(); save(); render(); window.scrollT
 function renderOnboard(){
   const p = window._ob || { gender:"m", age:30, height:175, weight:80, goalWeight:75, activity:"light", rate:0.5 };
   window._ob = p;
+  const dir=goalDir(p);
+  const dirWord = dir==="gain"?"עלייה":dir==="lose"?"ירידה":"שמירה על המשקל";
   app().innerHTML = `
     <h1>👋 ברוך הבא</h1>
-    <p class="sub">נחשב לך יעד קלורי יומי אישי לירידה במשקל. אפשר לשנות הכל בהמשך.</p>
+    <p class="sub">נחשב לך יעד קלורי יומי אישי. הגדר משקל יעד ${dir==="gain"?"גבוה":dir==="lose"?"נמוך":"שווה"} מהמשקל הנוכחי, ונתאים את התזונה ל${dirWord}. אפשר לשנות הכל בהמשך.</p>
     <div class="card">
       <label>מין</label>
       <div class="seg">
@@ -687,17 +696,21 @@ function renderOnboard(){
         <option value="high" ${p.activity==='high'?'selected':''}>גבוה — 6-7 אימונים</option>
         <option value="athlete" ${p.activity==='athlete'?'selected':''}>ספורטאי — פעילות אינטנסיבית</option>
       </select>
-      <label>קצב ירידה רצוי</label>
+      ${dir==="maintain" ? `<p class="muted sm" style="margin:6px 2px">משקל היעד שווה למשקל הנוכחי — היעד הקלורי יתאים לשמירה על המשקל. כדי לרדת או לעלות, שנה את משקל היעד.</p>` : `
+      <label>קצב ${dirWord} רצוי</label>
       <div class="chips">
         ${[["0.25","עדין"],["0.5","מומלץ"],["0.75","מהיר"],["1","אגרסיבי"]].map(([v,l])=>
           `<button class="chip ${(''+p.rate)===v?'on':''}" onclick="ob('rate',${v})">${v} ק״ג/שבוע · ${l}</button>`).join("")}
-      </div>
+      </div>`}
     </div>
     <div class="card center">
-      ${(()=>{ const t=computeTargets(p); return `
+      ${(()=>{ const t=computeTargets(p); const diff=Math.abs(t.cal-t.tdee);
+        const note = t.dir==="gain"?`עודף של ${diff} קלוריות לעלייה`:t.dir==="lose"?`גירעון של ${diff} קלוריות לירידה`:`תזונת תחזוקה`;
+        return `
         <div class="muted sm">היעד היומי המומלץ שלך</div>
         <div style="font-size:40px;font-weight:800;margin:4px 0">${t.cal} <span style="font-size:16px;font-weight:600" class="muted">קלוריות</span></div>
-        <div class="muted sm">תחזוקה: ${t.tdee} · BMI נוכחי: ${bmi(p)} (${bmiCat(bmi(p))})</div>`;})()}
+        <div class="muted sm">${note} · תחזוקה: ${t.tdee}</div>
+        <div class="muted sm">BMI נוכחי: ${bmi(p)} (${bmiCat(bmi(p))})</div>`;})()}
     </div>
     <button class="btn" onclick="finishOnboard()">בוא נתחיל 🚀</button>
     <div style="height:20px"></div>`;
@@ -822,7 +835,8 @@ async function aiMealIdea(){
     <div class="card center"><div class="spin" style="border-color:rgba(106,168,79,.3);border-top-color:var(--green);margin:14px auto 12px"></div>חושב על ארוחה מתאימה...</div>`;
   openSheet();
   try {
-    const prompt=`נותרו לי היום ${left} קלוריות לאכול. אכלתי עד כה ${sum.p} גרם חלבון מתוך יעד יומי של ${t.p} גרם. אני בתהליך ירידה במשקל. הצע רעיון אחד לארוחה בריאה, טעימה ופשוטה בעברית שמתאים לתקציב הקלוריות הזה ועשיר בחלבון. כתוב בקצרה: שם הארוחה, רשימת מרכיבים עם כמויות, וערך קלורי מוערך. עד 120 מילים.`;
+    const goalTxt = t.dir==="gain" ? "אני בתהליך עלייה במשקל ובניית מסת שריר" : t.dir==="lose" ? "אני בתהליך ירידה במשקל" : "אני בתהליך שמירה על המשקל";
+    const prompt=`נותרו לי היום ${left} קלוריות לאכול. אכלתי עד כה ${sum.p} גרם חלבון מתוך יעד יומי של ${t.p} גרם. ${goalTxt}. הצע רעיון אחד לארוחה בריאה, טעימה ופשוטה בעברית שמתאים לתקציב הקלוריות הזה ועשיר בחלבון. כתוב בקצרה: שם הארוחה, רשימת מרכיבים עם כמויות, וערך קלורי מוערך. עד 120 מילים.`;
     const r=await fetch(aiEndpoint(),{
       method:"POST",
       headers:{"content-type":"application/json","x-api-key":S.settings.apiKey,
@@ -1509,10 +1523,12 @@ function renderWeight(){
   const cur=ws.length?ws[ws.length-1].kg:S.profile.weight;
   const start=ws.length?ws[0].kg:cur;
   const goal=S.profile.goalWeight;
-  const lost=+(start-cur).toFixed(1);
-  const toGo=+(cur-goal).toFixed(1);
-  const totalToLose=start-goal;
-  const prog = totalToLose>0? Math.max(0,Math.min(100,Math.round((start-cur)/totalToLose*100))) : 100;
+  const dir = goal>start+0.1 ? "gain" : goal<start-0.1 ? "lose" : "maintain";
+  const total = Math.abs(start-goal);
+  const changed = dir==="gain" ? +(cur-start).toFixed(1) : +(start-cur).toFixed(1); // progress toward goal
+  const toGo = dir==="gain" ? +(goal-cur).toFixed(1) : +(cur-goal).toFixed(1);
+  const prog = total>0 ? Math.max(0,Math.min(100,Math.round(changed/total*100))) : 100;
+  const changedLabel = dir==="gain" ? "עלית" : "ירדת";
   const b=bmi({...S.profile,weight:cur});
   app().innerHTML=`
     <h1>⚖️ משקל</h1>
@@ -1524,7 +1540,7 @@ function renderWeight(){
       <div class="row between sm"><span class="muted">התחלה ${start}</span><span class="b">${prog}%</span><span class="muted">יעד ${goal}</span></div>
     </div>
     <div class="row" style="gap:10px">
-      <div class="card grow center" style="margin:6px 0"><div class="muted xs">ירדת</div><div style="font-size:24px;font-weight:800;color:var(--green)">${lost>0?lost:0}</div><div class="muted xs">ק״ג</div></div>
+      <div class="card grow center" style="margin:6px 0"><div class="muted xs">${changedLabel}</div><div style="font-size:24px;font-weight:800;color:var(--green)">${changed>0?changed:0}</div><div class="muted xs">ק״ג</div></div>
       <div class="card grow center" style="margin:6px 0"><div class="muted xs">נשאר ליעד</div><div style="font-size:24px;font-weight:800;color:var(--orange)">${toGo>0?toGo:0}</div><div class="muted xs">ק״ג</div></div>
     </div>
     <button class="btn" onclick="openWeight()">＋ רישום שקילה</button>
