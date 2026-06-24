@@ -6,6 +6,7 @@
 <meta name="theme-color" content="#E7E5E0" />
 <title>תזונה חכמה — מעקב משקל וקלוריות</title>
 <link rel="manifest" href="manifest.json" />
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root {
     --bg: #E7E5E0;
@@ -176,6 +177,9 @@ const DEFAULT = {
 // Personal AI bridge (Azure App Proxy) — pre-filled so the app works without manual setup.
 const BRIDGE_URL = "https://aiapibridge-greenwayshtang.msappproxy.net/";
 const BRIDGE_KEY = "k_food_JgQoHhB4oRpgElgLvhLZc8xg1cxrwf";
+// Cloud sync (Supabase) — public, browser-safe keys.
+const SUPA_URL = "https://xgorkdbiptrhdykplodn.supabase.co";
+const SUPA_KEY = "sb_publishable_ZZ-rsD9U9pKI35fbwewnPg_SlYt0Y2m";
 let S = load();
 function load(){
   let s=null;
@@ -187,7 +191,124 @@ function load(){
   if(!s.settings.apiKey) s.settings.apiKey = BRIDGE_KEY;
   return s;
 }
-function save(){ localStorage.setItem(KEY, JSON.stringify(S)); }
+function save(){ S.updatedAt = Date.now(); localStorage.setItem(KEY, JSON.stringify(S)); schedulePush(); }
+
+/* ---------- Cloud sync (Supabase) ---------- */
+let _sb=null, _sbUser=null, _pushT=null, _pullDone=false, _syncMsg="";
+function sbClient(){
+  if(_sb) return _sb;
+  if(!window.supabase || !SUPA_URL || !SUPA_KEY) return null;
+  try { _sb = window.supabase.createClient(SUPA_URL, SUPA_KEY, {auth:{persistSession:true, autoRefreshToken:true}}); }
+  catch(e){ return null; }
+  return _sb;
+}
+function cloudInit(){
+  const sb=sbClient();
+  if(!sb){ setTimeout(cloudInit, 400); return; }   // library not loaded yet — retry
+  sb.auth.getSession().then(({data})=>{
+    if(data && data.session){ _sbUser=data.session.user; cloudPull(); }
+  }).catch(()=>{});
+  try { sb.auth.onAuthStateChange((_e,sess)=>{ _sbUser = sess? sess.user : null; if(S.tab==="settings") render(); }); } catch(e){}
+}
+// Union-merge two full states so nothing additive is ever lost; newest side wins on scalars.
+function mergeData(local, cloud){
+  if(!cloud) return local; if(!local) return cloud;
+  const ln=local.updatedAt||0, cn=cloud.updatedAt||0, newer = cn>ln ? cloud : local;
+  const m={ profile: newer.profile||local.profile||cloud.profile||null,
+            targets: newer.targets||local.targets||cloud.targets||null,
+            settings: Object.assign({}, cloud.settings, local.settings, newer.settings),
+            barcodes: Object.assign({}, local.barcodes, cloud.barcodes),
+            log:{}, water:{}, weights:[], recents:{}, updatedAt: Math.max(ln,cn) };
+  const dates=new Set([...Object.keys(local.log||{}),...Object.keys(cloud.log||{})]);
+  dates.forEach(d=>{ const seen=new Set(), arr=[];
+    [...((local.log||{})[d]||[]),...((cloud.log||{})[d]||[])].forEach(it=>{
+      const k=it.id||(it.name+'|'+it.time); if(seen.has(k))return; seen.add(k); arr.push(it); });
+    arr.sort((x,y)=>(x.time||0)-(y.time||0)); m.log[d]=arr; });
+  const wd=new Set([...Object.keys(local.water||{}),...Object.keys(cloud.water||{})]);
+  wd.forEach(d=>{ m.water[d]=Math.max((local.water||{})[d]||0,(cloud.water||{})[d]||0); });
+  const wmap={}; const older = newer===cloud?local:cloud;
+  (older.weights||[]).forEach(w=>wmap[w.date]=w.kg);
+  (newer.weights||[]).forEach(w=>wmap[w.date]=w.kg);
+  m.weights=Object.keys(wmap).sort().map(d=>({date:d,kg:wmap[d]}));
+  const rk=new Set([...Object.keys(local.recents||{}),...Object.keys(cloud.recents||{})]);
+  rk.forEach(n=>{ const a=(local.recents||{})[n], b=(cloud.recents||{})[n];
+    m.recents[n] = (a&&b) ? {...a,...b, count:Math.max(a.count||0,b.count||0), last:Math.max(a.last||0,b.last||0), pin:!!(a.pin||b.pin)} : (a||b); });
+  return m;
+}
+async function cloudPull(){
+  const sb=sbClient(); if(!sb||!_sbUser) return;
+  _syncMsg="מסנכרן..."; if(S.tab==="settings") render();
+  try{
+    const { data, error } = await sb.from('user_data').select('data').eq('user_id',_sbUser.id).maybeSingle();
+    if(error) throw error;
+    if(data && data.data){
+      const tab=S.tab, vd=S.viewDate;
+      S = mergeData(S, data.data); S.tab=tab; S.viewDate=vd;
+      if(S.profile) S.targets=computeTargets(S.profile);
+      localStorage.setItem(KEY, JSON.stringify(S));
+    }
+    _pullDone=true; render();
+    cloudPushNow();                          // write the merged union back to the cloud
+  }catch(e){ _pullDone=true; _syncMsg="שגיאת סנכרון: "+(e.message||e); if(S.tab==="settings") render(); }
+}
+function schedulePush(){ if(!_sbUser||!_pullDone) return; clearTimeout(_pushT); _pushT=setTimeout(cloudPushNow, 2500); }
+async function cloudPushNow(){
+  const sb=sbClient(); if(!sb||!_sbUser) return;
+  const payload={...S}; delete payload.tab; delete payload.viewDate;
+  try{
+    const { error } = await sb.from('user_data').upsert({ user_id:_sbUser.id, data:payload, updated_at:new Date().toISOString() });
+    if(error) throw error;
+    _syncMsg="סונכרן ✓ "+new Date().toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'});
+  }catch(e){ _syncMsg="שגיאת סנכרון: "+(e.message||e); }
+  if(S.tab==="settings") render();
+}
+async function cloudSignIn(){
+  const sb=sbClient(); if(!sb){ toast("טוען ספריית סנכרון, נסה שוב בעוד רגע"); return; }
+  const email=(document.getElementById('sbemail')||{}).value, pass=(document.getElementById('sbpass')||{}).value;
+  if(!email||!pass){ toast("הזן אימייל וסיסמה"); return; }
+  _syncMsg="מתחבר..."; render();
+  const { data, error } = await sb.auth.signInWithPassword({email:email.trim(),password:pass});
+  if(error){ _syncMsg="התחברות נכשלה: "+error.message; render(); return; }
+  _sbUser=data.user; _syncMsg="מחובר ✓"; cloudPull();
+}
+async function cloudSignUp(){
+  const sb=sbClient(); if(!sb){ toast("טוען ספריית סנכרון, נסה שוב בעוד רגע"); return; }
+  const email=(document.getElementById('sbemail')||{}).value, pass=(document.getElementById('sbpass')||{}).value;
+  if(!email||(pass||"").length<6){ toast("אימייל + סיסמה (6 תווים לפחות)"); return; }
+  _syncMsg="יוצר חשבון..."; render();
+  const { data, error } = await sb.auth.signUp({email:email.trim(),password:pass});
+  if(error){ _syncMsg="הרשמה נכשלה: "+error.message; render(); return; }
+  if(data.user && !data.session){ _syncMsg="נשלח אליך מייל אימות — אשר אותו ואז התחבר."; render(); return; }
+  _sbUser=data.user; _syncMsg="חשבון נוצר ✓"; cloudPull();
+}
+async function cloudSignOut(){
+  const sb=sbClient(); if(!sb) return;
+  try{ await sb.auth.signOut(); }catch(e){}
+  _sbUser=null; _pullDone=false; _syncMsg=""; render();
+}
+function cloudCard(){
+  if(_sbUser){
+    return `<div class="card">
+      <div class="row between"><span class="b">☁️ מחובר ומסונכרן</span><button class="chip" onclick="cloudSignOut()">התנתק</button></div>
+      <div class="muted sm" style="margin-top:6px">${esc(_sbUser.email||'')}</div>
+      <div class="muted xs" style="margin-top:4px">${esc(_syncMsg||'הנתונים נשמרים בענן אוטומטית בכל שינוי, ומסתנכרנים לכל המכשירים שלך.')}</div>
+      <button class="btn sec" style="margin-top:10px" onclick="cloudPull()">🔄 משוך וסנכרן עכשיו</button>
+    </div>`;
+  }
+  return `<div class="card">
+    <p class="sub" style="margin:0 0 6px">התחבר כדי לשמור גיבוי אוטומטי בענן ולסנכרן בין מכשירים. הנתונים פרטיים — כל משתמש רואה רק את שלו.</p>
+    <label>אימייל</label>
+    <input id="sbemail" type="email" inputmode="email" autocomplete="email" placeholder="you@email.com">
+    <label>סיסמה</label>
+    <input id="sbpass" type="password" autocomplete="current-password" placeholder="לפחות 6 תווים">
+    <div class="row" style="gap:10px;margin-top:12px">
+      <button class="btn grow" onclick="cloudSignIn()">התחבר</button>
+      <button class="btn sec grow" onclick="cloudSignUp()">צור חשבון</button>
+    </div>
+    ${_syncMsg?`<div class="xs" style="margin-top:8px;color:var(--orange)">${esc(_syncMsg)}</div>`:''}
+    <p class="xs muted" style="margin-top:8px">אותו אימייל בכמה מכשירים = אותם נתונים מסונכרנים. אימייל אחר = מאגר נפרד ופרטי.</p>
+  </div>`;
+}
 
 /* ============================ Nutrition math ============================ */
 // Mifflin-St Jeor
@@ -1627,6 +1748,9 @@ function renderSettings(){
     </div>
     <button class="btn sec" onclick="editProfile()">✏️ עריכת פרטים ויעד</button>
 
+    <h2>☁️ סנכרון ענן (גיבוי אוטומטי)</h2>
+    ${cloudCard()}
+
     <h2>זיהוי אוכל מתמונה (AI)</h2>
     <div class="card">
       <p class="sub" style="margin:0 0 4px">כדי לזהות קלוריות מצילום, נדרש מפתח Anthropic API. הוא נשמר רק במכשיר שלך.</p>
@@ -1739,6 +1863,7 @@ function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;"
 window.go=go; window.ob=ob; window.finishOnboard=finishOnboard;
 if(S.profile) S.targets=computeTargets(S.profile); // refresh targets (adds water goal for older saves)
 render();
+cloudInit(); // restore session + pull cloud backup if previously logged in
 </script>
 </body>
 </html>
