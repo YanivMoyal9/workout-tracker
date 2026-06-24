@@ -591,6 +591,90 @@ const DB = [
   /* --- תוספי תזונה --- */
   ["אבקת חלבון (וויי)","💪",370,75,8,6],
   ["חטיף חלבון (פרוטאין בר)","💪",350,30,40,10],
+
+  /* --- מנות ישראליות ומזרחיות --- */
+  ["סביח","🥙",215,7,24,10],
+  ["מג'דרה","🍚",150,5,25,4],
+  ["בורקס תפוחי אדמה","🥟",300,6,34,16],
+  ["סמבוסק","🥟",320,9,33,17],
+  ["מאפה זעתר","🫓",290,7,38,12],
+  ["שווארמה עוף","🌯",230,18,4,16],
+  ["כבב על האש","🍢",250,17,3,19],
+  ["קציצות בשר ברוטב","🍖",200,14,6,13],
+  ["מוסקה","🍆",150,7,9,9],
+  ["ממולאים (ירקות במילוי אורז ובשר)","🫑",140,6,13,7],
+  ["כרוב ממולא","🥬",130,5,14,6],
+  ["מרק עוף עם אטריות","🍲",55,4,5,2],
+  ["מרק עדשים","🍲",90,6,12,1.5],
+  ["חמין/צ'ולנט","🍲",170,9,16,8],
+  ["דג אמנון בתנור","🐟",128,21,0,5],
+  ["קובה סלק","🍲",160,6,20,6],
+  ["מפרום/קבב עוף","🍗",240,16,5,17],
+
+  /* --- מאפים, לחמים ודגנים --- */
+  ["קרואסון חמאה","🥐",406,8,46,21],
+  ["רוגלך","🥐",420,6,48,22],
+  ["מאפין שוקולד","🧁",380,5,52,17],
+  ["לחמנייה לבנה","🍞",265,9,49,3.5],
+  ["בייגלה (פרצל)","🥨",380,10,71,5],
+  ["קרקר אורז","🍘",387,8,82,3],
+  ["שיבולת שועל (קוואקר) יבש","🌾",380,13,67,7],
+  ["דייסת שיבולת שועל מבושלת","🥣",70,2.5,12,1.5],
+  ["טורטייה (לאפה)","🫓",290,8,49,7],
+
+  /* --- מחלבה וגבינות --- */
+  ["גבינת שמנת (ממרח)","🧀",250,6,5,23],
+  ["גבינה בולגרית","🧀",230,14,2,18],
+  ["פטה","🧀",265,14,4,21],
+  ["גבינת פרמזן","🧀",392,36,3,26],
+  ["לבנה","🧀",150,8,5,11],
+  ["יוגורט טבעי 3%","🥣",60,3.5,5,3],
+  ["מעדן חלב (מילקי/דני)","🍮",120,3.5,18,4],
+  ["גלידת וניל","🍨",207,3.5,24,11],
+
+  /* --- ביצים ובוקר --- */
+  ["חביתה (2 ביצים)","🍳",180,12,1,14],
+  ["ביצה קשה","🥚",155,13,1.1,11],
+  ["ביצת עין","🍳",196,13,0.8,15],
+
+  /* --- ירקות נוספים --- */
+  ["חציל בתנור","🍆",35,1,6,1],
+  ["תירס מבושל","🌽",96,3.4,21,1.5],
+  ["אפונה","🫛",81,5,14,0.4],
+  ["בטטה מבושלת","🍠",90,2,21,0.1],
+  ["פטרייה","🍄",22,3,3,0.3],
+
+  /* --- פירות נוספים --- */
+  ["תמר מג'הול","🌴",277,1.8,75,0.2],
+
+  /* --- אגוזים, זרעים וממרחים --- */
+  ["קשיו","🌰",553,18,30,44],
+
+  /* --- קטניות --- */
+  ["שעועית שחורה מבושלת","🫘",132,8.9,24,0.5],
+  ["פול מבושל","🫘",110,8,20,0.4],
+
+  /* --- אסייאתי ומערבי --- */
+  ["אורז מטוגן","🍚",170,4,26,5],
+  ["נודלס מוקפץ","🍜",160,5,24,5],
+  ["פאד תאי","🍜",190,8,25,6],
+  ["קארי עוף","🍛",150,12,8,8],
+  ["ראמן","🍜",90,5,12,2.5],
+  ["ריזוטו","🍚",170,4,25,6],
+  ["כריך הודו","🥪",230,14,26,7],
+
+  /* --- מתוקים, חטיפים ומשקאות --- */
+  ["עוגת שוקולד","🍰",370,5,50,17],
+  ["עוגת גבינה","🍰",320,6,30,20],
+  ["בראוניז","🍫",466,6,50,28],
+  ["קוקיז שוקולד צ'יפס","🍪",480,5,64,23],
+  ["דונאט","🍩",450,5,51,25],
+  ["וופל בלגי","🧇",290,6,35,14],
+  ["פנקייק","🥞",227,6,28,9],
+  ["צ'ורוס","🍩",350,4,40,19],
+  ["יין יבש","🍷",83,0.1,2.6,0],
+  ["קפה הפוך (חלב)","☕",55,3,5,2.5],
+  ["סמודי פירות","🥤",60,1,14,0.3],
 ];
 
 /* ===== Natural portion units per food (label → grams, edible weight) =====
@@ -1371,15 +1455,50 @@ function delRecent(i){
 }
 function searchPanel(){
   const q=(window._q||"").trim();
-  const res = q? DB.filter(f=>f[0].includes(q)).slice(0,12) : DB.slice(0,12);
   return `<input id="searchin" placeholder="חפש מאכל... (לדוגמה: עוף, אורז)" value="${esc(q)}" oninput="onSearch(this.value)" autofocus>
-    <div class="card" style="padding:4px 16px;margin-top:10px">
-      ${res.length? res.map((f,i)=>`<div class="item" onclick="pickDb(${DB.indexOf(f)})" style="cursor:pointer">
-        <div class="em">${f[1]}</div>
-        <div class="grow"><div class="nm">${esc(f[0])}</div><div class="meta">ל־100 גר': ${f[2]} קל' · ח׳ ${f[3]} · פ׳ ${f[4]} · ש׳ ${f[5]}</div></div>
-        <div style="font-size:22px;color:var(--green)">＋</div></div>`).join("")
-        : `<div class="empty">לא נמצא. נסה להוסיף ידנית.</div>`}
-    </div>`;
+    <div class="card" style="padding:4px 16px;margin-top:10px">${searchResultsHTML(q)}</div>`;
+}
+function searchResultsHTML(q){
+  q=(q||"").trim();
+  const res = q? DB.filter(f=>f[0].includes(q)).slice(0,12) : DB.slice(0,12);
+  let html = res.length? res.map(f=>`<div class="item" onclick="pickDb(${DB.indexOf(f)})" style="cursor:pointer">
+      <div class="em">${f[1]}</div><div class="grow"><div class="nm">${esc(f[0])}</div>
+      <div class="meta">ל־100 גר': ${f[2]} קל' · ח׳ ${f[3]} · פ׳ ${f[4]} · ש׳ ${f[5]}</div></div>
+      <div style="font-size:22px;color:var(--green)">＋</div></div>`).join("")
+    : `<div class="empty" style="padding:12px 0">לא נמצא ברשימה המובנית.</div>`;
+  if(q && aiConfigured()){
+    html += `<button class="btn sec" style="margin:8px 0 6px" onclick="aiFoodSearch()">🤖 קבל הערכת AI עבור «${esc(q)}»</button>`;
+  }
+  return html;
+}
+// Ask the AI for per-100g nutrition of any typed food → enter quantity → add (and it's saved to "my foods").
+async function aiFoodSearch(){
+  const q=(window._q||"").trim();
+  if(!q){ toast("הקלד שם מאכל"); return; }
+  if(!aiConfigured()){ toast("צריך מפתח/גשר AI בהגדרות"); closeSheet(); go('settings'); return; }
+  const card=document.getElementById("sheet").querySelector(".card");
+  if(card) card.innerHTML=`<div class="center" style="padding:18px"><div class="spin" style="border-color:rgba(106,168,79,.3);border-top-color:var(--green);margin:6px auto 10px"></div>מעריך ערכים תזונתיים ל«${esc(q)}»...</div>`;
+  try{
+    const prompt=`אתה מומחה תזונה. החזר ערכים תזונתיים ל-100 גרם של המאכל: "${q}".
+החזר JSON תקין בלבד, ללא טקסט מסביב, במבנה המדויק:
+{"name":"שם תקני בעברית","emoji":"אימוג'י אחד מתאים","cal":0,"protein":0,"carbs":0,"fat":0}
+כל הערכים הם לכל 100 גרם. אם זה מאכל מורכב או מנה, תן הערכה ממוצעת סבירה.`;
+    const headers={ "content-type":"application/json","x-api-key":S.settings.apiKey,
+      "anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true" };
+    const body={ model:S.settings.model||"claude-opus-4-8", max_tokens:300,
+      messages:[{role:"user",content:[{type:"text",text:prompt}]}] };
+    const r=await fetch(aiEndpoint(),{method:"POST",headers,body:JSON.stringify(body)});
+    if(!r.ok){ let b=""; try{b=await r.text();}catch(_){} throw new Error("שגיאה "+r.status+(b?": "+b.slice(0,200):"")); }
+    const data=await r.json();
+    if(data.stop_reason==="refusal") throw new Error("הבקשה נדחתה");
+    const txt=(data.content.find(b=>b.type==="text")||{}).text||"{}";
+    const o=parseLooseJSON(txt);
+    if(o.cal==null) throw new Error("לא התקבלה הערכה");
+    const f=[o.name||q, o.emoji||"🍽️", Math.round(+o.cal||0),
+      +(+o.protein||0).toFixed(1), +(+o.carbs||0).toFixed(1), +(+o.fat||0).toFixed(1)];
+    window._gramTarget={ type:"ai", f };
+    askGrams(f[0], f[1]);
+  }catch(e){ toast("חיפוש AI נכשל: "+(e.message||e)); renderAddSheet(); }
 }
 function manualPanel(){
   const m=window._man||{name:"",grams:100,cal:"",p:"",c:"",f:""};
@@ -1402,11 +1521,7 @@ function onSearch(v){ window._q=v;
   // re-render only the results list without losing focus
   const sheet=document.getElementById("sheet");
   const old=sheet.querySelector(".card"); if(!old) return renderAddSheet();
-  const q=v.trim(); const res=q?DB.filter(f=>f[0].includes(q)).slice(0,12):DB.slice(0,12);
-  old.innerHTML = res.length? res.map(f=>`<div class="item" onclick="pickDb(${DB.indexOf(f)})" style="cursor:pointer">
-      <div class="em">${f[1]}</div><div class="grow"><div class="nm">${esc(f[0])}</div>
-      <div class="meta">ל־100 גר': ${f[2]} קל' · ח׳ ${f[3]} · פ׳ ${f[4]} · ש׳ ${f[5]}</div></div>
-      <div style="font-size:22px;color:var(--green)">＋</div></div>`).join("") : `<div class="empty">לא נמצא. נסה להוסיף ידנית.</div>`;
+  old.innerHTML = searchResultsHTML(v);
 }
 let _dbPick=null;
 function pickDb(idx){
