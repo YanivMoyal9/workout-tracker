@@ -56,6 +56,29 @@
   .wt-reveal { display: block; margin: 2px 0 4px; background: none; border: none; cursor: pointer;
     color: #6F7277; font-size: 12.5px; font-family: inherit; padding: 4px 2px; }
   html.wt-dark .wt-reveal { color: #A7AAB0; }
+  /* Nutrition screen */
+  .wt-nut-body { width: 100%; max-width: 460px; padding: 0 4px 32px; box-sizing: border-box; }
+  .wt-nut-ringwrap { position: relative; width: 200px; height: 200px; margin: 6px auto 14px; }
+  .wt-nut-ringwrap svg { transform: rotate(-90deg); }
+  .wt-nr-bg { fill: none; stroke: rgba(0,0,0,.08); stroke-width: 14; }
+  html.wt-dark .wt-nr-bg { stroke: rgba(255,255,255,.12); }
+  .wt-nr-fg { fill: none; stroke: #2F7A3D; stroke-width: 14; stroke-linecap: round; transition: stroke-dashoffset .5s ease; }
+  .wt-nr-fg.over { stroke: #D9744F; }
+  .wt-nut-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .wt-nut-center b { font-size: 38px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .wt-nut-center span { font-size: 13px; color: #7C7F85; margin-top: 2px; }
+  .wt-nut-bars { padding: 0 16px; }
+  .wt-nbar { margin: 13px 0; }
+  .wt-nbar-top { display: flex; justify-content: space-between; align-items: baseline; font-size: 14px; margin-bottom: 5px; }
+  .wt-nbar-top span { font-weight: 700; }
+  .wt-nbar-top b { font-size: 13px; color: #6F7277; font-variant-numeric: tabular-nums; }
+  html.wt-dark .wt-nbar-top b { color: #A7AAB0; }
+  .wt-nbar-track { height: 9px; border-radius: 6px; background: rgba(0,0,0,.08); overflow: hidden; }
+  html.wt-dark .wt-nbar-track { background: rgba(255,255,255,.10); }
+  .wt-nbar-fill { height: 100%; border-radius: 6px; transition: width .5s ease; }
+  .wt-nbar-fill.over { filter: saturate(1.4) brightness(.95); }
+  .wt-nbar-sub { font-size: 11px; color: #8A8D92; margin-top: 3px; }
+  .wt-nut-foot { font-size: 12px; color: #7C7F85; text-align: center; margin: 16px 0 30px; }
   #wt-home { position: fixed; top: calc(10px + env(safe-area-inset-top)); right: 12px; z-index: 99998;
     width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
     font-size: 20px; text-decoration: none; background: rgba(251,250,248,.92); color: #2F3033;
@@ -651,6 +674,47 @@ react/cjs/react-jsx-runtime.production.js:
     }, 4000);
   }
 
+  /* ---------- Nutrition (pulled from the food app via a Supabase RPC) ---------- */
+  function nutBar(label, val, target, unit, color) {
+    var pct = target > 0 ? Math.min(100, Math.round(val / target * 100)) : 0;
+    var over = target > 0 && val > target, diff = Math.round(target - val);
+    return '<div class="wt-nbar">' +
+      '<div class="wt-nbar-top"><span>' + label + '</span><b>' + Math.round(val) + ' / ' + Math.round(target) + ' ' + unit + '</b></div>' +
+      '<div class="wt-nbar-track"><div class="wt-nbar-fill' + (over ? ' over' : '') + '" style="width:' + pct + '%;background:' + color + '"></div></div>' +
+      '<div class="wt-nbar-sub">' + (over ? 'חריגה של ' + Math.abs(diff) + ' ' + unit : 'נשארו ' + diff + ' ' + unit) + '</div></div>';
+  }
+  function renderNutrition(container) {
+    container.innerHTML = '<div class="wt-empty">טוען נתוני תזונה…</div>';
+    if (!sbConfigured()) { container.innerHTML = '<div class="wt-empty">צריך קודם להגדיר סנכרון ענן (כלים → ☁️ סנכרון ענן) עם פרטי אותו פרויקט Supabase של אפליקציית התזונה.</div>'; return; }
+    var c = sbCfg();
+    fetch(cleanUrl(c.url) + "/rest/v1/rpc/nutrition_today", { method: "POST", headers: sbHeaders(), body: "{}" })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(function (d) {
+        if (!d || !d.targets) { container.innerHTML = '<div class="wt-empty">לא נמצאו נתוני תזונה.<br>ודא שהרצת את פונקציית nutrition_today ב-Supabase.</div>'; return; }
+        var t = d.targets || {}, log = d.log_today || [], water = +d.water_today || 0;
+        var s = { calories: 0, protein: 0, carbs: 0, fat: 0 };
+        log.forEach(function (e) { s.calories += +e.calories || 0; s.protein += +e.protein || 0; s.carbs += +e.carbs || 0; s.fat += +e.fat || 0; });
+        var calT = +t.cal || 0, calPct = calT > 0 ? Math.min(100, s.calories / calT * 100) : 0;
+        var R = 86, LEN = 2 * Math.PI * R, over = calT > 0 && s.calories > calT;
+        container.innerHTML =
+          '<div class="wt-nut-ringwrap">' +
+            '<svg width="200" height="200" viewBox="0 0 200 200">' +
+              '<circle class="wt-nr-bg" cx="100" cy="100" r="' + R + '"></circle>' +
+              '<circle class="wt-nr-fg' + (over ? ' over' : '') + '" cx="100" cy="100" r="' + R + '" stroke-dasharray="' + LEN + '" stroke-dashoffset="' + (LEN * (1 - calPct / 100)) + '"></circle>' +
+            '</svg>' +
+            '<div class="wt-nut-center"><b>' + Math.round(s.calories) + '</b><span>מתוך ' + Math.round(calT) + ' קל׳</span></div>' +
+          '</div>' +
+          '<div class="wt-nut-bars">' +
+            nutBar('חלבון', s.protein, +t.p || 0, 'ג׳', '#3B6FD4') +
+            nutBar('פחמימות', s.carbs, +t.c || 0, 'ג׳', '#E0A341') +
+            nutBar('שומן', s.fat, +t.f || 0, 'ג׳', '#D9744F') +
+            nutBar('מים', water, +t.water || 0, 'מ״ל', '#28A39A') +
+          '</div>' +
+          '<div class="wt-nut-foot">' + log.length + ' פריטים נאכלו היום · נמשך מאפליקציית התזונה 🍎</div>';
+      })
+      .catch(function (e) { container.innerHTML = '<div class="wt-empty">שגיאה במשיכת תזונה: ' + e.message + '</div>'; });
+  }
+
   /* ---------- Rest timer (independent, full-screen) ---------- */
   var timerOv, ringFg, timeB, timeSpan, RING_LEN, tState = null, tRAF = null, audioCtx = null, tCloseT = null;
   var panel = null; // tools panel, toggled from the bottom-nav "כלים" tab
@@ -857,13 +921,14 @@ react/cjs/react-jsx-runtime.production.js:
         '<span class="wt-slider"></span></label></div>' +
       '<button class="wt-btn" id="wt-records">🏆 שיאים אישיים</button>' +
       '<button class="wt-btn" id="wt-streak-btn">🔥 עקביות ורצף</button>' +
+      '<button class="wt-btn" id="wt-nut-btn">🍎 תזונה היום</button>' +
       '<button class="wt-btn" id="wt-rest">⏱ טיימר מנוחה</button>' +
       '<button class="wt-btn" id="wt-sync-btn">☁️ סנכרון ענן</button>' +
       '<button class="wt-btn" id="wt-export">⬇ ייצוא גיבוי</button>' +
       '<button class="wt-btn" id="wt-import">⬆ שחזור גיבוי</button>' +
       '<a class="wt-btn" href="index.html" style="text-decoration:none">⌂ חזרה לכל האפליקציות</a>' +
       '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">' +
-      '<div class="wt-ver">מהדורה 25.06 · v10 (הסתרת מפתחות)</div>';
+      '<div class="wt-ver">מהדורה 25.06 · v11 (תזונה היום)</div>';
 
     /* Rest timer overlay */
     timerOv = document.createElement("div");
@@ -932,10 +997,20 @@ react/cjs/react-jsx-runtime.production.js:
         '<p class="wt-sync-note">⚠️ קוד הסנכרון הוא הסוד שמגן על הנתונים — בחר ביטוי ארוך וייחודי. אל תשתף את ה-service_role key.</p>' +
       '</div>';
 
+    /* Nutrition overlay */
+    var nutOv = document.createElement("div");
+    nutOv.id = "wt-nutrition";
+    nutOv.className = "wt-overlay";
+    nutOv.innerHTML =
+      '<button class="wt-close" id="wt-nut-close" aria-label="סגור">✕</button>' +
+      '<h2>🍎 תזונה היום</h2>' +
+      '<div class="wt-nut-body" id="wt-nut-body"></div>';
+
     document.body.appendChild(panel);
     document.body.appendChild(timerOv);
     document.body.appendChild(recOv);
     document.body.appendChild(syncOv);
+    document.body.appendChild(nutOv);
     document.body.appendChild(streakOv);
 
     var homeBtn = document.createElement("a");
@@ -1018,6 +1093,14 @@ react/cjs/react-jsx-runtime.production.js:
     });
     streakOv.querySelector("#wt-streak-close").addEventListener("click", function () { streakOv.classList.remove("open"); });
 
+    /* Nutrition (from food app) */
+    panel.querySelector("#wt-nut-btn").addEventListener("click", function () {
+      panel.classList.remove("open");
+      renderNutrition(nutOv.querySelector("#wt-nut-body"));
+      nutOv.classList.add("open");
+    });
+    nutOv.querySelector("#wt-nut-close").addEventListener("click", function () { nutOv.classList.remove("open"); });
+
     /* Cloud sync */
     sbStatusEl = syncOv.querySelector("#wt-sb-status");
     function fillSyncForm() {
@@ -1054,7 +1137,7 @@ react/cjs/react-jsx-runtime.production.js:
 
     /* Close overlays with Escape */
     document.addEventListener("keydown", function (e) {
-      if (e.key === "Escape") { closeTimer(); recOv.classList.remove("open"); streakOv.classList.remove("open"); syncOv.classList.remove("open"); }
+      if (e.key === "Escape") { closeTimer(); recOv.classList.remove("open"); streakOv.classList.remove("open"); syncOv.classList.remove("open"); nutOv.classList.remove("open"); }
     });
 
     /* Auto-open the rest timer whenever a set is marked done */
