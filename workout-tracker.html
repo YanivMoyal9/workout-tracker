@@ -675,6 +675,18 @@ react/cjs/react-jsx-runtime.production.js:
   }
 
   /* ---------- Nutrition (pulled from the food app via a Supabase RPC) ---------- */
+  function todayStr() {
+    var d = new Date();
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+  function nutFoot(count, dateUsed) {
+    var base = count + " פריטים נאכלו · נמשך מאפליקציית התזונה 🍎";
+    if (dateUsed && dateUsed !== todayStr()) {
+      var p = dateUsed.split("-");
+      base = "📅 מציג את היום האחרון שתועד: " + p[2] + "." + p[1] + " · " + base;
+    }
+    return base;
+  }
   function nutBar(label, val, target, unit, color) {
     var pct = target > 0 ? Math.min(100, Math.round(val / target * 100)) : 0;
     var over = target > 0 && val > target, diff = Math.round(target - val);
@@ -687,7 +699,7 @@ react/cjs/react-jsx-runtime.production.js:
     container.innerHTML = '<div class="wt-empty">טוען נתוני תזונה…</div>';
     if (!sbConfigured()) { container.innerHTML = '<div class="wt-empty">צריך קודם להגדיר סנכרון ענן (כלים → ☁️ סנכרון ענן) עם פרטי אותו פרויקט Supabase של אפליקציית התזונה.</div>'; return; }
     var c = sbCfg();
-    fetch(cleanUrl(c.url) + "/rest/v1/rpc/nutrition_today", { method: "POST", headers: sbHeaders(), body: "{}" })
+    fetch(cleanUrl(c.url) + "/rest/v1/rpc/nutrition_today", { method: "POST", headers: sbHeaders(), body: JSON.stringify({ d: todayStr() }) })
       .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
       .then(function (d) {
         if (!d || !d.targets) { container.innerHTML = '<div class="wt-empty">לא נמצאו נתוני תזונה.<br>ודא שהרצת את פונקציית nutrition_today ב-Supabase.</div>'; return; }
@@ -710,7 +722,7 @@ react/cjs/react-jsx-runtime.production.js:
             nutBar('שומן', s.fat, +t.f || 0, 'ג׳', '#D9744F') +
             nutBar('מים', water, +t.water || 0, 'מ״ל', '#28A39A') +
           '</div>' +
-          '<div class="wt-nut-foot">' + log.length + ' פריטים נאכלו היום · נמשך מאפליקציית התזונה 🍎</div>';
+          '<div class="wt-nut-foot">' + nutFoot(log.length, d.date_used) + '</div>';
       })
       .catch(function (e) { container.innerHTML = '<div class="wt-empty">שגיאה במשיכת תזונה: ' + e.message + '</div>'; });
   }
@@ -928,7 +940,7 @@ react/cjs/react-jsx-runtime.production.js:
       '<button class="wt-btn" id="wt-import">⬆ שחזור גיבוי</button>' +
       '<a class="wt-btn" href="index.html" style="text-decoration:none">⌂ חזרה לכל האפליקציות</a>' +
       '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">' +
-      '<div class="wt-ver">מהדורה 25.06 · v11 (תזונה היום)</div>';
+      '<div class="wt-ver">מהדורה 25.06 · v12 (תיקון תאריך תזונה)</div>';
 
     /* Rest timer overlay */
     timerOv = document.createElement("div");
