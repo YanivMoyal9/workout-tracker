@@ -387,12 +387,12 @@ react/cjs/react-jsx-runtime.production.js:
   }
 
   /* ---------- Rest timer (independent, full-screen) ---------- */
-  var timerOv, ringFg, timeB, timeSpan, RING_LEN, tState = null, tRAF = null, audioCtx = null;
+  var timerOv, ringFg, timeB, timeSpan, RING_LEN, tState = null, tRAF = null, audioCtx = null, tCloseT = null;
   var panel = null; // tools panel, toggled from the bottom-nav "כלים" tab
   function beep() {
     try {
       audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-      [0, 0.25].forEach(function (off) {
+      [0, 0.22, 0.44].forEach(function (off) { // three rising tones = a clear "ring"
         var o = audioCtx.createOscillator(), g = audioCtx.createGain();
         o.type = "sine"; o.frequency.value = 880;
         o.connect(g); g.connect(audioCtx.destination);
@@ -403,25 +403,39 @@ react/cjs/react-jsx-runtime.production.js:
         o.start(t0); o.stop(t0 + 0.2);
       });
     } catch (e) { /* audio not available */ }
-    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+    if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 200]);
   }
   function tickRender() {
     if (!tState) return;
     var now = Date.now();
     var remain = Math.round((tState.endAt - now) / 1000);
-    var over = remain < 0;
-    var disp = Math.abs(remain);
-    timeB.textContent = (over ? "+" : "") + Math.floor(disp / 60) + ":" + String(disp % 60).padStart(2, "0");
-    timeSpan.textContent = over ? "מעבר ליעד" : "מנוחה";
+    if (remain <= 0) {
+      // Rest is over: ring, show a finish state, then auto-close back to the
+      // workout so the user doesn't have to dismiss the timer manually.
+      timeB.textContent = "0:00";
+      timeSpan.textContent = "סיום מנוחה!";
+      ringFg.style.strokeDashoffset = RING_LEN; // ring fully drained
+      ringFg.classList.add("over");
+      if (!tState.fired) {
+        tState.fired = true;
+        beep();
+        clearTimeout(tCloseT);
+        tCloseT = setTimeout(closeTimer, 1500);
+      }
+      return; // stop the countdown loop
+    }
+    var disp = remain;
+    timeB.textContent = Math.floor(disp / 60) + ":" + String(disp % 60).padStart(2, "0");
+    timeSpan.textContent = "מנוחה";
     var frac = Math.max(0, Math.min(1, remain / tState.total));
     ringFg.style.strokeDashoffset = RING_LEN * (1 - frac);
-    ringFg.classList.toggle("over", over);
-    if (over && !tState.fired) { tState.fired = true; beep(); }
+    ringFg.classList.remove("over");
     tRAF = requestAnimationFrame(tickRender);
   }
   function startTimer(sec) {
     tState = { total: sec, endAt: Date.now() + sec * 1000, fired: false };
     cancelAnimationFrame(tRAF);
+    clearTimeout(tCloseT);
     tickRender();
   }
   function adjustTimer(delta) {
@@ -429,8 +443,11 @@ react/cjs/react-jsx-runtime.production.js:
     tState.endAt += delta * 1000;
     tState.total = Math.max(tState.total + delta, 5);
     tState.fired = false;
+    clearTimeout(tCloseT);
+    cancelAnimationFrame(tRAF);
+    tickRender();
   }
-  function stopTimer() { cancelAnimationFrame(tRAF); tState = null; }
+  function stopTimer() { cancelAnimationFrame(tRAF); clearTimeout(tCloseT); tState = null; }
   function openTimer() {
     timerOv.classList.add("open");
     startTimer(getRestSec());
