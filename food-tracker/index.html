@@ -1132,11 +1132,13 @@ function editMulG(f){ const e=window._edit; e.grams=Math.max(1,Math.round((+e.gr
 function editSetG(v){ const e=window._edit; e.grams=Math.max(0,Math.round(+v||0)); renderEditSheet(); }
 function editBumpQ(d){ const e=window._edit; e.qty=Math.max(0.5,+( (+e.qty||0)+d ).toFixed(2)); renderEditSheet(); }
 function editSetQ(v){ const e=window._edit; e.qty=Math.max(0,+(+v||0).toFixed(2)); renderEditSheet(); }
+function editP100(f,v){ const e=window._edit; if(!e.per100) return; e.per100[f]=Math.max(0,+v||0); renderEditSheet(); }
 function saveEdit(){
   const e=window._edit, i=todayItems().find(x=>x.id===e.id); if(!i){ closeSheet(); return; }
   const c=editCalc(e);
   i.grams=c.grams; i.calories=c.cal; i.protein=c.protein; i.carbs=c.carbs; i.fat=c.fat;
   if(e.mode==="grams") i.per100=e.per100;
+  rememberFood(i, e.mode==="grams");   // teach the system the corrected weight and product values
   save(); closeSheet(); render(); toast("עודכן ✓");
 }
 function renderEditSheet(){
@@ -1154,7 +1156,18 @@ function renderEditSheet(){
       </div>
       <div class="chips"><button class="chip" onclick="editMulG(0.5)">½ כמות</button>
         <button class="chip" onclick="editMulG(2)">×2</button>
-        <button class="chip" onclick="editMulG(3)">×3</button></div>`;
+        <button class="chip" onclick="editMulG(3)">×3</button></div>
+      ${e.showMacros ? `<div class="card" style="margin-top:12px;padding:12px">
+          <p class="sm" style="margin:0 0 8px;color:var(--green)">📚 תקן את ערכי המוצר האמיתי ל-100 גרם — האפליקציה תזכור ותחיל אוטומטית בפעם הבאה.</p>
+          <div class="field2">
+            <div><label>קלוריות /100ג'</label><input type="number" inputmode="numeric" value="${Math.round(e.per100.cal||0)}" onchange="editP100('cal',this.value)"></div>
+            <div><label>חלבון /100ג'</label><input type="number" inputmode="decimal" value="${+(+e.per100.protein||0).toFixed(1)}" onchange="editP100('protein',this.value)"></div>
+          </div>
+          <div class="field2">
+            <div><label>פחמימה /100ג'</label><input type="number" inputmode="decimal" value="${+(+e.per100.carbs||0).toFixed(1)}" onchange="editP100('carbs',this.value)"></div>
+            <div><label>שומן /100ג'</label><input type="number" inputmode="decimal" value="${+(+e.per100.fat||0).toFixed(1)}" onchange="editP100('fat',this.value)"></div>
+          </div></div>`
+        : `<button class="chip" style="margin-top:10px" onclick="window._edit.showMacros=true;renderEditSheet()">✏️ תקן ערכים תזונתיים (לימוד המוצר)</button>`}`;
   } else {
     body=`<label>כמה מנות?</label>
       <div class="row" style="gap:8px;align-items:center;margin:6px 0 4px">
@@ -1371,7 +1384,7 @@ function photoPanel(){
     return `<div class="card" style="padding:8px 16px">
       ${r.items.map((i,idx)=>`<div class="item" style="align-items:flex-start">
         <div class="em">${i.emoji||"🍽️"}</div>
-        <div class="grow"><div class="nm">${esc(i.name)} <span class="pill ${i.confidence}">${({high:"זיהוי בטוח",medium:"זיהוי סביר",low:"זיהוי משוער"})[i.confidence]||""}</span></div>
+        <div class="grow"><div class="nm">${esc(i.name)} <span class="pill ${i.confidence}">${({high:"זיהוי בטוח",medium:"זיהוי סביר",low:"זיהוי משוער"})[i.confidence]||""}</span>${i.learned?` <span class="pill" style="background:var(--green);color:#fff">📚 לפי התיקון שלך</span>`:""}</div>
         <div class="meta">ח׳ ${Math.round(i.protein)} · פ׳ ${Math.round(i.carbs)} · ש׳ ${Math.round(i.fat)} גר'</div>
         <div class="row" style="gap:6px;align-items:center;margin-top:7px">
           <span class="muted xs">⚖️ משקל:</span>
@@ -1545,19 +1558,22 @@ function setGin(g, el){
 }
 function askGrams(name, emoji){
   const units=PORTIONS[name];
-  // default to a sensible portion (middle size) when units exist, else 100g
-  const def = units ? units[Math.floor(units.length/2)][1] : 100;
-  const defIdx = units ? Math.floor(units.length/2) : -1;
+  const L=(S.recents||{})[String(name).trim()];
+  const learnedG = L && L.grams>0 ? Math.round(L.grams) : 0;   // your usual portion, learned from history
+  // default to your learned portion → else a sensible size → else 100g
+  const def = learnedG || (units ? units[Math.floor(units.length/2)][1] : 100);
+  const defIdx = (!learnedG && units) ? Math.floor(units.length/2) : -1;
   let chips;
   if(units){
     chips = units.map((u,i)=>`<button class="chip${i===defIdx?' on':''}" onclick="setGin(${u[1]},this)">${esc(u[0])}<span style="opacity:.6;font-size:11px"> · ${u[1]}ג'</span></button>`).join("");
   } else {
-    chips = [50,100,150,200,300].map(g=>`<button class="chip${g===100?' on':''}" onclick="setGin(${g},this)">${g}g</button>`).join("");
+    chips = [50,100,150,200,300].map(g=>`<button class="chip${(!learnedG&&g===100)?' on':''}" onclick="setGin(${g},this)">${g}g</button>`).join("");
   }
   document.getElementById("sheet").innerHTML=`
     <div class="handle"></div>
     <h2 style="margin:2px">${emoji} ${esc(name)}</h2>
     <div class="card">
+    ${learnedG?`<p class="sm" style="margin:0 0 8px;color:var(--green)">📚 הכמות הרגילה שלך: ${learnedG} גר' (אפשר לשנות)</p>`:""}
     <label>${units?"בחר כמות / גודל":"כמה גרם אכלת?"}</label>
     <div class="chips" style="margin-bottom:10px">${chips}</div>
     <label>או הזן גרמים ידנית</label>
@@ -1570,10 +1586,14 @@ function confirmGrams(){
   const g=+document.getElementById("gin").value||0;
   if(g<=0){ toast("נא להזין כמות"); return; }
   const f=window._gramTarget.f, r=g/100;
-  addItem({ name:f[0], emoji:f[1], grams:g, calories:Math.round(f[2]*r),
-    protein:+(f[3]*r).toFixed(1), carbs:+(f[4]*r).toFixed(1), fat:+(f[5]*r).toFixed(1), source:"db",
-    per100:{ cal:+f[2], protein:+f[3], carbs:+f[4], fat:+f[5] } });
-  closeSheet(); toast("נוסף ✓");
+  // if the user previously corrected this product, use their values instead of the DB/AI defaults
+  const L=(S.recents||{})[String(f[0]).trim()];
+  const corrected = L && L.macroSrc==="user" && L.per100 && +L.per100.cal;
+  const p100 = corrected ? L.per100 : { cal:+f[2], protein:+f[3], carbs:+f[4], fat:+f[5] };
+  addItem({ name:f[0], emoji:f[1], grams:g, calories:Math.round((+p100.cal||0)*r),
+    protein:+(((+p100.protein||0)*r)).toFixed(1), carbs:+(((+p100.carbs||0)*r)).toFixed(1),
+    fat:+(((+p100.fat||0)*r)).toFixed(1), source:"db", per100:p100 });
+  closeSheet(); toast(corrected?"נוסף ✓ (לפי התיקון שלך)":"נוסף ✓");
 }
 function addManual(){
   const m=window._man;
@@ -1582,28 +1602,42 @@ function addManual(){
   addItem({ name:m.name, emoji:"🍽️", grams:mg, calories:Math.round(+m.cal),
     protein:+m.p||0, carbs:+m.c||0, fat:+m.f||0, source:"manual",
     per100: mg?{ cal:Math.round((+m.cal||0)*mr), protein:+(((+m.p||0)*mr)).toFixed(1),
-      carbs:+(((+m.c||0)*mr)).toFixed(1), fat:+(((+m.f||0)*mr)).toFixed(1) }:null });
+      carbs:+(((+m.c||0)*mr)).toFixed(1), fat:+(((+m.f||0)*mr)).toFixed(1) }:null }, true);
   window._man=null; closeSheet(); toast("נוסף ✓");
 }
-function addItem(it){
+function addItem(it, learnedMacros){
   it.id=uid(); it.time=Date.now();
   const k=S.viewDate; (S.log[k]=S.log[k]||[]).push(it);
-  rememberFood(it);
+  rememberFood(it, learnedMacros);
   save(); render();
 }
-// Save every logged food into "my foods" so it can be re-added in one tap next time.
-function rememberFood(it){
+// Learn from every entry: remember the typical portion weight and the "real product" macros.
+// learnedMacros=true marks an explicit user correction (manual/edit) that AI/DB can never overwrite.
+function rememberFood(it, learnedMacros){
   if(!it || !it.name) return;
   const key=String(it.name).trim(); if(!key) return;
   S.recents = S.recents || {};
   const ex = S.recents[key] || {};
-  S.recents[key] = {
-    name:key, emoji:it.emoji||ex.emoji||"🍽️",
-    per100: it.per100 || ex.per100 || null,
-    grams: (+it.grams||0) || ex.grams || 0,
-    cal:+it.calories||0, protein:+it.protein||0, carbs:+it.carbs||0, fat:+it.fat||0,
-    count:(ex.count||0)+1, last:Date.now(), pin:ex.pin||false
-  };
+  let per100 = it.per100 || ex.per100 || null;
+  let macroSrc = ex.macroSrc;
+  if(learnedMacros && it.per100){ per100 = it.per100; macroSrc = "user"; }   // user correction wins
+  else if(ex.macroSrc==="user" && ex.per100){ per100 = ex.per100; }          // protect a prior correction
+  const g = (+it.grams||0) || ex.grams || 0;
+  let cal=+it.calories||0, protein=+it.protein||0, carbs=+it.carbs||0, fat=+it.fat||0;
+  if(per100 && g){ const r=g/100;   // keep absolute values consistent with the (corrected) per100
+    cal=Math.round((+per100.cal||0)*r); protein=+(((+per100.protein||0)*r)).toFixed(1);
+    carbs=+(((+per100.carbs||0)*r)).toFixed(1); fat=+(((+per100.fat||0)*r)).toFixed(1); }
+  S.recents[key] = { name:key, emoji:it.emoji||ex.emoji||"🍽️", per100, macroSrc,
+    grams:g, cal, protein, carbs, fat, count:(ex.count||0)+1, last:Date.now(), pin:ex.pin||false };
+}
+// Override AI-recognised items with the user's previously-corrected macros ("the real product").
+function applyLearning(items){
+  (items||[]).forEach(i=>{
+    const L=(S.recents||{})[String(i.name||"").trim()];
+    if(L && L.macroSrc==="user" && L.per100 && +L.per100.cal){
+      i.per100={...L.per100}; i.learned=true; aiRecalc(i);   // keep AI's weight, fix the macros
+    }
+  });
 }
 function aiRecalc(i){
   const g=Math.max(0,+i.grams||0), r=g/100, p=i.per100||{};
@@ -1667,6 +1701,7 @@ async function runAnalysis(){
       }
       aiRecalc(i);
     });
+    applyLearning(result.items);   // apply any past corrections to recognised foods
     window._aiResult = result;
   } catch(e){
     toast(e.message||"שגיאה בניתוח");
