@@ -36,6 +36,23 @@
   html.wt-dark .wt-btn { background: #34363A; color: #E9E9EC; }
   .wt-btn:active { opacity: .8; }
   .wt-ver { text-align: center; font-size: 10.5px; color: #A7A9AD; margin: 8px 2px 2px; }
+  /* Cloud sync form */
+  .wt-sync-body { width: 100%; max-width: 440px; padding: 0 18px 32px; box-sizing: border-box; }
+  .wt-sync-help { font-size: 13.5px; color: #6F7277; margin: 4px 0 16px; line-height: 1.5; }
+  html.wt-dark .wt-sync-help { color: #A7AAB0; }
+  .wt-fld { display: block; margin: 12px 0; }
+  .wt-fld span { display: block; font-size: 12.5px; font-weight: 700; margin-bottom: 5px; }
+  .wt-fld input { width: 100%; box-sizing: border-box; padding: 11px 12px; border-radius: 10px;
+    border: 1px solid #CFCDC8; background: #fff; color: #2F3033; font-size: 14px; font-family: inherit;
+    direction: ltr; text-align: left; }
+  html.wt-dark .wt-fld input { background: #2B2C30; border-color: #44464B; color: #E9E9EC; }
+  #wt-sync .wt-chip.primary { width: 100%; margin: 10px 0 6px; padding: 12px; }
+  .wt-sync-actions { display: flex; gap: 10px; }
+  .wt-sync-actions .wt-chip { flex: 1; }
+  .wt-sync-status { text-align: center; font-size: 13px; font-weight: 700; margin: 14px 0 6px;
+    padding: 10px; border-radius: 10px; background: rgba(0,0,0,.05); }
+  html.wt-dark .wt-sync-status { background: rgba(255,255,255,.06); }
+  .wt-sync-note { font-size: 11.5px; color: #8A8D92; line-height: 1.5; margin-top: 10px; }
   #wt-home { position: fixed; top: calc(10px + env(safe-area-inset-top)); right: 12px; z-index: 99998;
     width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
     font-size: 20px; text-decoration: none; background: rgba(251,250,248,.92); color: #2F3033;
@@ -564,6 +581,68 @@ react/cjs/react-jsx-runtime.production.js:
       '<div class="wt-heat-legend"><span class="wt-cell on"></span> יום אימון</div>';
   }
 
+  /* ---------- Cloud sync (Supabase, optional) ----------
+     Pure REST against Supabase/PostgREST — no SDK. The user enters their own
+     project URL + anon key + a private sync code in the app, so no secrets
+     pass through anywhere but their device. Last-write-wins by updated_at. */
+  var SB_CFG_KEY = "wt-sync-cfg", SB_META_KEY = "wt-sync-meta";
+  function sbCfg() { try { return JSON.parse(localStorage.getItem(SB_CFG_KEY) || "null"); } catch (e) { return null; } }
+  function sbConfigured() { var c = sbCfg(); return !!(c && c.url && c.key && c.code); }
+  function sbMeta() { try { return JSON.parse(localStorage.getItem(SB_META_KEY) || "{}"); } catch (e) { return {}; } }
+  function setSbMeta(m) { localStorage.setItem(SB_META_KEY, JSON.stringify(m)); }
+  function hashStr(s) { var h = 0; for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return String(h); }
+  function sbBase() { return sbCfg().url.replace(/\/+$/, "") + "/rest/v1/workout_sync"; }
+  function sbHeaders() { var c = sbCfg(); return { apikey: c.key, Authorization: "Bearer " + c.key, "Content-Type": "application/json" }; }
+  var sbStatusEl = null;
+  function sbStatus(msg) { if (sbStatusEl) sbStatusEl.textContent = msg; }
+  function sbPush() {
+    if (!sbConfigured()) return Promise.resolve();
+    var raw = localStorage.getItem("gym-tracker-v2");
+    if (raw == null) return Promise.resolve();
+    var now = new Date().toISOString(), c = sbCfg();
+    return fetch(sbBase(), {
+      method: "POST",
+      headers: Object.assign(sbHeaders(), { Prefer: "resolution=merge-duplicates,return=minimal" }),
+      body: JSON.stringify({ sync_id: c.code, data: JSON.parse(raw), updated_at: now })
+    }).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      setSbMeta({ at: now, hash: hashStr(raw) });
+      sbStatus("סונכרן לענן ✓ " + new Date().toLocaleTimeString("he-IL"));
+    }).catch(function (e) { sbStatus("שגיאת סנכרון: " + e.message); });
+  }
+  function sbPull(applyAndReload) {
+    if (!sbConfigured()) return Promise.resolve(null);
+    var c = sbCfg();
+    return fetch(sbBase() + "?sync_id=eq." + encodeURIComponent(c.code) + "&select=data,updated_at", { headers: sbHeaders() })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(function (rows) {
+        if (!rows || !rows.length) { sbStatus("אין עדיין נתונים בענן — שמור גיבוי ראשון"); return null; }
+        var remote = rows[0], remoteStr = JSON.stringify(remote.data), remoteHash = hashStr(remoteStr);
+        var localRaw = localStorage.getItem("gym-tracker-v2"), localHash = localRaw ? hashStr(localRaw) : null;
+        var meta = sbMeta();
+        if (remoteHash === localHash) { setSbMeta({ at: remote.updated_at, hash: localHash }); sbStatus("מעודכן ✓"); return null; }
+        var localChanged = !meta.hash || (localHash && localHash !== meta.hash);
+        if (localChanged && meta.at && remote.updated_at && remote.updated_at <= meta.at) return sbPush();
+        if (applyAndReload) {
+          localStorage.setItem("gym-tracker-v2", remoteStr);
+          setSbMeta({ at: remote.updated_at, hash: remoteHash });
+          sbStatus("נמשכו נתונים מהענן — טוען מחדש…");
+          setTimeout(function () { location.reload(); }, 700);
+        }
+        return remote;
+      }).catch(function (e) { sbStatus("שגיאת סנכרון: " + e.message); return null; });
+  }
+  function installCloudSync() {
+    if (!sbConfigured()) return;
+    sbPull(true);
+    var lastHash = (function () { var r = localStorage.getItem("gym-tracker-v2"); return r ? hashStr(r) : null; })();
+    setInterval(function () {
+      if (!sbConfigured()) return;
+      var r = localStorage.getItem("gym-tracker-v2"), h = r ? hashStr(r) : null;
+      if (h !== lastHash) { lastHash = h; sbPush(); }
+    }, 4000);
+  }
+
   /* ---------- Rest timer (independent, full-screen) ---------- */
   var timerOv, ringFg, timeB, timeSpan, RING_LEN, tState = null, tRAF = null, audioCtx = null, tCloseT = null;
   var panel = null; // tools panel, toggled from the bottom-nav "כלים" tab
@@ -771,11 +850,12 @@ react/cjs/react-jsx-runtime.production.js:
       '<button class="wt-btn" id="wt-records">🏆 שיאים אישיים</button>' +
       '<button class="wt-btn" id="wt-streak-btn">🔥 עקביות ורצף</button>' +
       '<button class="wt-btn" id="wt-rest">⏱ טיימר מנוחה</button>' +
+      '<button class="wt-btn" id="wt-sync-btn">☁️ סנכרון ענן</button>' +
       '<button class="wt-btn" id="wt-export">⬇ ייצוא גיבוי</button>' +
       '<button class="wt-btn" id="wt-import">⬆ שחזור גיבוי</button>' +
       '<a class="wt-btn" href="index.html" style="text-decoration:none">⌂ חזרה לכל האפליקציות</a>' +
       '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">' +
-      '<div class="wt-ver">מהדורה 25.06 · v7 (טיימר נסגר לבד)</div>';
+      '<div class="wt-ver">מהדורה 25.06 · v8 (סנכרון ענן)</div>';
 
     /* Rest timer overlay */
     timerOv = document.createElement("div");
@@ -822,9 +902,31 @@ react/cjs/react-jsx-runtime.production.js:
       '<h2>🔥 עקביות ורצף</h2>' +
       '<div class="wt-streak-body" id="wt-streak-body"></div>';
 
+    /* Cloud sync overlay */
+    var syncOv = document.createElement("div");
+    syncOv.id = "wt-sync";
+    syncOv.className = "wt-overlay";
+    syncOv.innerHTML =
+      '<button class="wt-close" id="wt-sync-close" aria-label="סגור">✕</button>' +
+      '<h2>☁️ סנכרון ענן (Supabase)</h2>' +
+      '<div class="wt-sync-body">' +
+        '<p class="wt-sync-help">הנתונים יסונכרנו אוטומטית לענן ויהיו זמינים בכל מכשיר. הזן את פרטי הפרויקט שלך:</p>' +
+        '<label class="wt-fld"><span>Project URL</span><input id="wt-sb-url" type="url" inputmode="url" placeholder="https://xxxx.supabase.co" autocomplete="off"></label>' +
+        '<label class="wt-fld"><span>anon key (מפתח ציבורי)</span><input id="wt-sb-key" type="text" placeholder="eyJhbGciOi..." autocomplete="off"></label>' +
+        '<label class="wt-fld"><span>קוד סנכרון פרטי (זהה בכל המכשירים)</span><input id="wt-sb-code" type="text" placeholder="ביטוי-סוד-ארוך-משלך" autocomplete="off"></label>' +
+        '<button class="wt-chip primary" id="wt-sb-save">שמור והתחבר</button>' +
+        '<div class="wt-sync-actions">' +
+          '<button class="wt-chip" id="wt-sb-push">⬆ העלה לענן</button>' +
+          '<button class="wt-chip" id="wt-sb-pull">⬇ משוך מהענן</button>' +
+        '</div>' +
+        '<div class="wt-sync-status" id="wt-sb-status">לא מחובר</div>' +
+        '<p class="wt-sync-note">⚠️ קוד הסנכרון הוא הסוד שמגן על הנתונים — בחר ביטוי ארוך וייחודי. אל תשתף את ה-service_role key.</p>' +
+      '</div>';
+
     document.body.appendChild(panel);
     document.body.appendChild(timerOv);
     document.body.appendChild(recOv);
+    document.body.appendChild(syncOv);
     document.body.appendChild(streakOv);
 
     var homeBtn = document.createElement("a");
@@ -907,13 +1009,43 @@ react/cjs/react-jsx-runtime.production.js:
     });
     streakOv.querySelector("#wt-streak-close").addEventListener("click", function () { streakOv.classList.remove("open"); });
 
+    /* Cloud sync */
+    sbStatusEl = syncOv.querySelector("#wt-sb-status");
+    function fillSyncForm() {
+      var c = sbCfg() || {};
+      syncOv.querySelector("#wt-sb-url").value = c.url || "";
+      syncOv.querySelector("#wt-sb-key").value = c.key || "";
+      syncOv.querySelector("#wt-sb-code").value = c.code || "";
+      sbStatus(sbConfigured() ? "מחובר · " + (sbMeta().at ? "סונכרן לאחרונה " + new Date(sbMeta().at).toLocaleString("he-IL") : "טרם סונכרן") : "לא מחובר");
+    }
+    panel.querySelector("#wt-sync-btn").addEventListener("click", function () {
+      panel.classList.remove("open");
+      fillSyncForm();
+      syncOv.classList.add("open");
+    });
+    syncOv.querySelector("#wt-sync-close").addEventListener("click", function () { syncOv.classList.remove("open"); });
+    syncOv.querySelector("#wt-sb-save").addEventListener("click", function () {
+      var url = syncOv.querySelector("#wt-sb-url").value.trim();
+      var key = syncOv.querySelector("#wt-sb-key").value.trim();
+      var code = syncOv.querySelector("#wt-sb-code").value.trim();
+      if (!url || !key || !code) { sbStatus("נא למלא את כל השדות"); return; }
+      localStorage.setItem(SB_CFG_KEY, JSON.stringify({ url: url, key: key, code: code }));
+      sbStatus("נשמר · מסנכרן…");
+      sbPull(true).then(function (r) { if (!r) sbPush(); });
+    });
+    syncOv.querySelector("#wt-sb-push").addEventListener("click", function () { sbStatus("מעלה…"); sbPush(); });
+    syncOv.querySelector("#wt-sb-pull").addEventListener("click", function () { sbStatus("מושך…"); sbPull(true); });
+
     /* Close overlays with Escape */
     document.addEventListener("keydown", function (e) {
-      if (e.key === "Escape") { closeTimer(); recOv.classList.remove("open"); streakOv.classList.remove("open"); }
+      if (e.key === "Escape") { closeTimer(); recOv.classList.remove("open"); streakOv.classList.remove("open"); syncOv.classList.remove("open"); }
     });
 
     /* Auto-open the rest timer whenever a set is marked done */
     installSessionHook();
+
+    /* Start cloud sync if configured */
+    installCloudSync();
 
     /* Keep the modern bottom-nav active tab highlighted */
     installNavHook();
