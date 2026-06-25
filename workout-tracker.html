@@ -591,8 +591,13 @@ react/cjs/react-jsx-runtime.production.js:
   function sbMeta() { try { return JSON.parse(localStorage.getItem(SB_META_KEY) || "{}"); } catch (e) { return {}; } }
   function setSbMeta(m) { localStorage.setItem(SB_META_KEY, JSON.stringify(m)); }
   function hashStr(s) { var h = 0; for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return String(h); }
-  function sbBase() { return sbCfg().url.replace(/\/+$/, "") + "/rest/v1/workout_sync"; }
-  function sbHeaders() { var c = sbCfg(); return { apikey: c.key, Authorization: "Bearer " + c.key, "Content-Type": "application/json" }; }
+  function cleanUrl(u) {
+    u = (u || "").trim();
+    var m = u.match(/https?:\/\/[^\/\s]+/); // keep only scheme + host, drop any pasted junk
+    return m ? m[0] : u.replace(/\/+$/, "");
+  }
+  function sbBase() { return cleanUrl(sbCfg().url) + "/rest/v1/workout_sync"; }
+  function sbHeaders() { var k = (sbCfg().key || "").trim(); return { apikey: k, Authorization: "Bearer " + k, "Content-Type": "application/json" }; }
   var sbStatusEl = null;
   function sbStatus(msg) { if (sbStatusEl) sbStatusEl.textContent = msg; }
   function sbPush() {
@@ -855,7 +860,7 @@ react/cjs/react-jsx-runtime.production.js:
       '<button class="wt-btn" id="wt-import">⬆ שחזור גיבוי</button>' +
       '<a class="wt-btn" href="index.html" style="text-decoration:none">⌂ חזרה לכל האפליקציות</a>' +
       '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">' +
-      '<div class="wt-ver">מהדורה 25.06 · v8 (סנכרון ענן)</div>';
+      '<div class="wt-ver">מהדורה 25.06 · v9 (תיקון סנכרון)</div>';
 
     /* Rest timer overlay */
     timerOv = document.createElement("div");
@@ -1025,10 +1030,11 @@ react/cjs/react-jsx-runtime.production.js:
     });
     syncOv.querySelector("#wt-sync-close").addEventListener("click", function () { syncOv.classList.remove("open"); });
     syncOv.querySelector("#wt-sb-save").addEventListener("click", function () {
-      var url = syncOv.querySelector("#wt-sb-url").value.trim();
+      var url = cleanUrl(syncOv.querySelector("#wt-sb-url").value);
       var key = syncOv.querySelector("#wt-sb-key").value.trim();
       var code = syncOv.querySelector("#wt-sb-code").value.trim();
       if (!url || !key || !code) { sbStatus("נא למלא את כל השדות"); return; }
+      syncOv.querySelector("#wt-sb-url").value = url; // reflect the cleaned URL back
       localStorage.setItem(SB_CFG_KEY, JSON.stringify({ url: url, key: key, code: code }));
       sbStatus("נשמר · מסנכרן…");
       sbPull(true).then(function (r) { if (!r) sbPush(); });
