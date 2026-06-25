@@ -102,6 +102,42 @@
   .wt-rec .orm { font-size: 20px; font-weight: 800; white-space: nowrap; padding-inline-start: 10px; }
   .wt-rec .orm small { font-size: 12px; font-weight: 600; color: #7C7F85; }
   .wt-empty { color: #7C7F85; font-size: 15px; text-align: center; padding: 40px 20px; }
+  .wt-rec-main { display: flex; flex-direction: column; gap: 3px; }
+  .wt-spark { margin-top: 5px; display: block; }
+
+  /* ===== PR celebration + confetti ===== */
+  #wt-celebrate { position: fixed; top: 22%; left: 50%; transform: translateX(-50%) scale(.8);
+    z-index: 100002; background: #2F3033; color: #fff; padding: 16px 26px; border-radius: 16px;
+    box-shadow: 0 10px 40px rgba(0,0,0,.35); text-align: center; direction: rtl; opacity: 0;
+    pointer-events: none; transition: opacity .25s ease, transform .25s ease;
+    font-family: system-ui, sans-serif; max-width: 86vw; }
+  #wt-celebrate.show { opacity: 1; transform: translateX(-50%) scale(1); }
+  #wt-celebrate b { display: block; font-size: 22px; font-weight: 800; margin-bottom: 4px; }
+  #wt-celebrate span { font-size: 15px; opacity: .9; }
+  .wt-confetti { position: fixed; inset: 0; z-index: 100001; pointer-events: none; overflow: hidden; }
+  .wt-confetti i { position: absolute; top: -14px; border-radius: 1px; opacity: .95;
+    animation-name: wt-fall; animation-timing-function: cubic-bezier(.3,.5,.7,1); animation-fill-mode: forwards; }
+  @keyframes wt-fall {
+    0% { transform: translateY(0) rotate(0); opacity: 1; }
+    100% { transform: translateY(105vh) rotate(540deg); opacity: .9; }
+  }
+
+  /* ===== Streak / consistency heatmap ===== */
+  #wt-streak .wt-streak-body { width: 100%; max-width: 460px; padding: 0 16px 32px; box-sizing: border-box; }
+  .wt-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 6px 0 18px; }
+  .wt-stat { background: rgba(255,255,255,.7); border-radius: 12px; padding: 12px 6px; text-align: center; }
+  html.wt-dark .wt-stat { background: rgba(255,255,255,.06); }
+  .wt-stat b { display: block; font-size: 24px; font-weight: 800; }
+  .wt-stat span { font-size: 11px; color: #7C7F85; }
+  .wt-heat { display: grid; grid-template-rows: repeat(7, 1fr); grid-auto-flow: column; gap: 4px;
+    justify-content: center; }
+  .wt-cell { width: 15px; height: 15px; border-radius: 3px; background: rgba(0,0,0,.08); }
+  html.wt-dark .wt-cell { background: rgba(255,255,255,.10); }
+  .wt-cell.on { background: #2F7A3D; }
+  .wt-cell.fut { visibility: hidden; }
+  .wt-heat-legend { display: flex; align-items: center; gap: 6px; justify-content: center;
+    margin-top: 14px; font-size: 12px; color: #7C7F85; }
+  .wt-heat-legend .wt-cell { width: 13px; height: 13px; }
 
   /* ===== Modernized bottom navigation bar (overrides the app's inline styles) ===== */
   #root nav {
@@ -386,6 +422,147 @@ react/cjs/react-jsx-runtime.production.js:
     }).sort(function (a, b) { return b.rec.orm - a.rec.orm; });
   }
 
+  /* ---------- Progress series & best-1RM helpers ---------- */
+  function getLogs() {
+    try { return (JSON.parse(localStorage.getItem("gym-tracker-v2") || "{}").logs) || []; }
+    catch (e) { return []; }
+  }
+  function bestOrmInLog(log, exId) {
+    var sets = log && log.prog && log.prog[exId];
+    if (!Array.isArray(sets)) return null;
+    var best = null;
+    sets.forEach(function (s) {
+      if (!s || !s.done) return;
+      var w = +s.w || 0, r = +s.r || 0;
+      if (w > 0 && r > 0) { var o = epley(w, r); if (best === null || o > best) best = o; }
+    });
+    return best;
+  }
+  function loggedBestByEx() {
+    var best = {};
+    getLogs().forEach(function (log) {
+      var prog = log && log.prog; if (!prog) return;
+      Object.keys(prog).forEach(function (exId) {
+        var o = bestOrmInLog(log, exId);
+        if (o !== null && (best[exId] == null || o > best[exId])) best[exId] = o;
+      });
+    });
+    return best;
+  }
+  function exSeries(exId) {
+    var pts = [];
+    getLogs().forEach(function (log) {
+      var o = bestOrmInLog(log, exId);
+      if (o !== null && log.date) pts.push({ t: new Date(log.date).getTime(), orm: o });
+    });
+    return pts.sort(function (a, b) { return a.t - b.t; });
+  }
+  function sparkline(series) {
+    if (!series || series.length < 2) return "";
+    var W = 96, H = 30, pad = 3, n = series.length;
+    var vals = series.map(function (p) { return p.orm; });
+    var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals), span = max - min || 1;
+    var pts = series.map(function (p, i) {
+      var x = pad + (W - 2 * pad) * (i / (n - 1));
+      var y = pad + (H - 2 * pad) * (1 - (p.orm - min) / span);
+      return [x, y];
+    });
+    var d = pts.map(function (p) { return p[0].toFixed(1) + "," + p[1].toFixed(1); }).join(" ");
+    var last = pts[pts.length - 1];
+    var col = vals[n - 1] >= vals[0] ? "#2F7A3D" : "#C2683E";
+    return '<svg class="wt-spark" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '">' +
+      '<polyline fill="none" stroke="' + col + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="' + d + '"></polyline>' +
+      '<circle cx="' + last[0].toFixed(1) + '" cy="' + last[1].toFixed(1) + '" r="2.6" fill="' + col + '"></circle></svg>';
+  }
+
+  /* ---------- Personal-record celebration (real time) ---------- */
+  var prRunningMax = {};
+  function checkPR(exId, sets) {
+    if (!Array.isArray(sets)) return;
+    var base = loggedBestByEx()[exId];
+    if (base == null) return; // no prior history -> nothing to beat yet
+    var best = null;
+    sets.forEach(function (s) {
+      if (!s || !s.done) return;
+      var w = +s.w || 0, r = +s.r || 0;
+      if (w > 0 && r > 0) { var o = epley(w, r); if (best === null || o > best.orm) best = { orm: o, w: w, r: r }; }
+    });
+    if (!best) return;
+    var runMax = prRunningMax[exId] != null ? prRunningMax[exId] : base;
+    if (best.orm > runMax + 0.01) {
+      prRunningMax[exId] = best.orm;
+      celebratePR(exId, best.w, best.r);
+    }
+  }
+  function celebratePR(exId, w, r) {
+    showCelebration("🏆 שיא חדש!", (EX_NAMES[exId] || exId) + " · " + w + " ק״ג × " + r);
+    confetti();
+    if (navigator.vibrate) navigator.vibrate([120, 60, 120, 60, 220]);
+  }
+  var celebT = null;
+  function showCelebration(title, sub) {
+    var el = document.getElementById("wt-celebrate");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "wt-celebrate";
+      el.innerHTML = "<b></b><span></span>";
+      document.body.appendChild(el);
+    }
+    el.querySelector("b").textContent = title;
+    el.querySelector("span").textContent = sub;
+    el.classList.add("show");
+    clearTimeout(celebT);
+    celebT = setTimeout(function () { el.classList.remove("show"); }, 2600);
+  }
+  function confetti() {
+    var c = document.createElement("div");
+    c.className = "wt-confetti";
+    var colors = ["#2F7A3D", "#E0B341", "#3B6FD4", "#D9544F", "#7C4DBE", "#28A39A"];
+    for (var i = 0; i < 44; i++) {
+      var p = document.createElement("i");
+      var size = 6 + Math.random() * 6;
+      p.style.cssText = "left:" + (Math.random() * 100) + "%;width:" + size + "px;height:" + (size * 0.5) +
+        "px;background:" + colors[i % colors.length] + ";animation-duration:" + (1.8 + Math.random() * 1.4) +
+        "s;animation-delay:" + (Math.random() * 0.3) + "s;transform:rotate(" + (Math.random() * 360) + "deg);";
+      c.appendChild(p);
+    }
+    document.body.appendChild(c);
+    setTimeout(function () { if (c.parentNode) c.parentNode.removeChild(c); }, 3600);
+  }
+
+  /* ---------- Consistency / streak heatmap ---------- */
+  function dayKey(d) { return d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate(); }
+  function renderStreak(container) {
+    var days = {};
+    getLogs().forEach(function (log) { if (log.date) days[dayKey(new Date(log.date))] = true; });
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    var total = Object.keys(days).length;
+    function inLastDays(n) { var c = 0; for (var i = 0; i < n; i++) { var d = new Date(today); d.setDate(today.getDate() - i); if (days[dayKey(d)]) c++; } return c; }
+    var thisWeek = inLastDays(7), thisMonth = inLastDays(30);
+    function weekStart(d) { var x = new Date(d); x.setDate(d.getDate() - d.getDay()); x.setHours(0, 0, 0, 0); return x; }
+    function weekHas(ws) { for (var i = 0; i < 7; i++) { var d = new Date(ws); d.setDate(ws.getDate() + i); if (days[dayKey(d)]) return true; } return false; }
+    var streak = 0, cur = weekStart(today);
+    if (!weekHas(cur)) cur.setDate(cur.getDate() - 7); // current week not trained yet is OK
+    while (weekHas(cur)) { streak++; cur.setDate(cur.getDate() - 7); }
+    var WEEKS = 17, grid = [], startW = weekStart(today);
+    startW.setDate(startW.getDate() - 7 * (WEEKS - 1));
+    for (var w = 0; w < WEEKS; w++) {
+      for (var dd = 0; dd < 7; dd++) {
+        var d = new Date(startW); d.setDate(startW.getDate() + w * 7 + dd);
+        grid.push('<div class="wt-cell' + (days[dayKey(d)] ? " on" : "") + (d > today ? " fut" : "") + '"></div>');
+      }
+    }
+    container.innerHTML =
+      '<div class="wt-stats">' +
+        '<div class="wt-stat"><b>' + streak + '</b><span>רצף שבועות 🔥</span></div>' +
+        '<div class="wt-stat"><b>' + thisWeek + '</b><span>השבוע</span></div>' +
+        '<div class="wt-stat"><b>' + thisMonth + '</b><span>30 ימים</span></div>' +
+        '<div class="wt-stat"><b>' + total + '</b><span>סה״כ</span></div>' +
+      '</div>' +
+      '<div class="wt-heat">' + grid.join("") + '</div>' +
+      '<div class="wt-heat-legend"><span class="wt-cell on"></span> יום אימון</div>';
+  }
+
   /* ---------- Rest timer (independent, full-screen) ---------- */
   var timerOv, ringFg, timeB, timeSpan, RING_LEN, tState = null, tRAF = null, audioCtx = null, tCloseT = null;
   var panel = null; // tools panel, toggled from the bottom-nav "כלים" tab
@@ -474,18 +651,26 @@ react/cjs/react-jsx-runtime.production.js:
     } catch (e) { return null; }
   }
   function onSessionWrite(sessionVal) {
-    var map = countDone(sessionVal);
-    if (map === null) { doneByEx = null; return; } // session ended/cleared
+    var entries = null;
+    try { var s = sessionVal ? JSON.parse(sessionVal) : null; entries = s && s.entries; } catch (e) {}
+    if (!entries) { doneByEx = null; prRunningMax = {}; return; } // session ended/cleared
+    var map = {};
+    Object.keys(entries).forEach(function (exId) {
+      var arr = entries[exId];
+      if (Array.isArray(arr)) map[exId] = arr.filter(function (x) { return x && x.done; }).length;
+    });
     if (doneByEx === null) { doneByEx = map; return; } // first sighting: baseline only
     var bumpedEx = null;
     Object.keys(map).forEach(function (exId) {
       if (map[exId] > (doneByEx[exId] || 0)) bumpedEx = exId;
     });
     doneByEx = map;
-    if (bumpedEx && autoTimerOn) {
+    if (!bumpedEx) return;
+    if (autoTimerOn) {
       timerOv.classList.add("open");
       startTimer(getRestSec());
     }
+    checkPR(bumpedEx, entries[bumpedEx]); // celebrate if this set beats the all-time best
   }
   function installSessionHook() {
     // Poll the session in storage instead of overriding localStorage.setItem,
@@ -583,6 +768,7 @@ react/cjs/react-jsx-runtime.production.js:
         '<label class="wt-switch"><input type="checkbox" id="wt-auto-toggle">' +
         '<span class="wt-slider"></span></label></div>' +
       '<button class="wt-btn" id="wt-records">🏆 שיאים אישיים</button>' +
+      '<button class="wt-btn" id="wt-streak-btn">🔥 עקביות ורצף</button>' +
       '<button class="wt-btn" id="wt-rest">⏱ טיימר מנוחה</button>' +
       '<button class="wt-btn" id="wt-export">⬇ ייצוא גיבוי</button>' +
       '<button class="wt-btn" id="wt-import">⬆ שחזור גיבוי</button>' +
@@ -625,9 +811,19 @@ react/cjs/react-jsx-runtime.production.js:
       '<h2>🏆 שיאים אישיים</h2>' +
       '<div class="wt-rec-list" id="wt-rec-list"></div>';
 
+    /* Streak / consistency overlay */
+    var streakOv = document.createElement("div");
+    streakOv.id = "wt-streak";
+    streakOv.className = "wt-overlay";
+    streakOv.innerHTML =
+      '<button class="wt-close" id="wt-streak-close" aria-label="סגור">✕</button>' +
+      '<h2>🔥 עקביות ורצף</h2>' +
+      '<div class="wt-streak-body" id="wt-streak-body"></div>';
+
     document.body.appendChild(panel);
     document.body.appendChild(timerOv);
     document.body.appendChild(recOv);
+    document.body.appendChild(streakOv);
 
     var homeBtn = document.createElement("a");
     homeBtn.id = "wt-home";
@@ -690,8 +886,10 @@ react/cjs/react-jsx-runtime.production.js:
         list.innerHTML = '<div class="wt-empty">עדיין אין נתוני אימון.<br>השלם אימון והשיאים יופיעו כאן 💪</div>';
       } else {
         list.innerHTML = recs.map(function (x) {
-          return '<div class="wt-rec"><div><div class="nm">' + x.name + '</div>' +
-            '<div class="sub">' + x.rec.w + ' ק״ג × ' + x.rec.r + ' · ' + fmtDate(x.rec.date) + '</div></div>' +
+          return '<div class="wt-rec">' +
+            '<div class="wt-rec-main"><div class="nm">' + x.name + '</div>' +
+            '<div class="sub">' + x.rec.w + ' ק״ג × ' + x.rec.r + ' · ' + fmtDate(x.rec.date) + '</div>' +
+            sparkline(exSeries(x.id)) + '</div>' +
             '<div class="orm">' + Math.round(x.rec.orm) + '<small> ק״ג 1RM</small></div></div>';
         }).join("");
       }
@@ -699,9 +897,17 @@ react/cjs/react-jsx-runtime.production.js:
     });
     recOv.querySelector("#wt-rec-close").addEventListener("click", function () { recOv.classList.remove("open"); });
 
+    /* Streak / consistency */
+    panel.querySelector("#wt-streak-btn").addEventListener("click", function () {
+      panel.classList.remove("open");
+      renderStreak(streakOv.querySelector("#wt-streak-body"));
+      streakOv.classList.add("open");
+    });
+    streakOv.querySelector("#wt-streak-close").addEventListener("click", function () { streakOv.classList.remove("open"); });
+
     /* Close overlays with Escape */
     document.addEventListener("keydown", function (e) {
-      if (e.key === "Escape") { closeTimer(); recOv.classList.remove("open"); }
+      if (e.key === "Escape") { closeTimer(); recOv.classList.remove("open"); streakOv.classList.remove("open"); }
     });
 
     /* Auto-open the rest timer whenever a set is marked done */
