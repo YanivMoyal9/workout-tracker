@@ -1285,13 +1285,28 @@ function stopScanner(){
   if(_bcStream){ _bcStream.getTracks().forEach(t=>t.stop()); _bcStream=null; }
   if(_zxReader){ try{ _zxReader.reset(); }catch(_){} _zxReader=null; }
 }
+// Shared community barcode database (Supabase) — products one user enters help everyone.
+async function sharedBarcodeGet(code){
+  const sb=sbClient(); if(!sb||!_sbUser) return null;
+  try{
+    const { data } = await sb.from('barcodes').select('name,emoji,cal,protein,carbs,fat').eq('code',code).maybeSingle();
+    if(data && data.cal!=null) return [data.name, data.emoji||"📦", +data.cal, +data.protein||0, +data.carbs||0, +data.fat||0];
+  }catch(e){}
+  return null;
+}
+function sharedBarcodePut(code,f){
+  const sb=sbClient(); if(!sb||!_sbUser) return;
+  try{ sb.from('barcodes').upsert({ code, name:f[0], emoji:f[1]||"📦",
+    cal:+f[2]||0, protein:+f[3]||0, carbs:+f[4]||0, fat:+f[5]||0,
+    updated_by:_sbUser.id, updated_at:new Date().toISOString() }).then(()=>{},()=>{}); }catch(e){}
+}
 async function lookupBarcode(code){
   code=(code||"").trim().replace(/\D/g,"");
   if(code.length<6){ toast("מספר ברקוד לא תקין"); return; }
   stopScanner();
   // 1) learned products (saved on this device) — instant, works offline
   if(S.barcodes && S.barcodes[code]){
-    window._gramTarget={ f:S.barcodes[code] };
+    window._gramTarget={ f:S.barcodes[code], code };
     toast("מוצר מוכר ✓");
     askGrams(S.barcodes[code][0], S.barcodes[code][1]||"📦");
     return;
@@ -1299,19 +1314,23 @@ async function lookupBarcode(code){
   document.getElementById("sheet").innerHTML=`<div class="handle"></div>
     <div class="card center"><div class="spin" style="border-color:rgba(106,168,79,.3);border-top-color:var(--green);margin:14px auto 12px"></div>מחפש מוצר ${esc(code)}...</div>`;
   let name="";
-  // 2) Open Food Facts (global), then 3) Nutritionix (if key set) — chained
+  // 2) shared community database (other users' entries)
+  const shared=await sharedBarcodeGet(code);
+  if(shared){ toast("מוצר מהמאגר המשותף ✓"); saveAndUse(code,shared,true); return; }
+  // 3) Open Food Facts (global), then 4) Nutritionix (if key set) — chained
   let res=await offLookup(code);
   if(res&&res.f){ saveAndUse(code,res.f); return; }
   if(res&&res.name) name=res.name;
   let res2=await nixLookup(code);
   if(res2&&res2.f){ saveAndUse(code,res2.f); return; }
   if(res2&&res2.name&&!name) name=res2.name;
-  // 4) not found anywhere — enter once (name prefilled if any source had it)
+  // 5) not found anywhere — enter once (name prefilled if any source had it)
   openNewProduct(code,name);
 }
-function saveAndUse(code,f){
-  S.barcodes[code]=f; save();              // remember for next time
-  window._gramTarget={ f };
+function saveAndUse(code,f,fromShared){
+  S.barcodes[code]=f; save();              // cache locally for next time
+  if(!fromShared) sharedBarcodePut(code,f); // contribute to the shared DB
+  window._gramTarget={ f, code };
   askGrams(f[0], f[1]||"📦");
 }
 async function offLookup(code){
@@ -1344,26 +1363,31 @@ async function nixLookup(code){
     return { f:[name||("מוצר "+code),"📦",cal,per(food.nf_protein),per(food.nf_total_carbohydrate),per(food.nf_total_fat)] };
   } catch(e){ return null; }
 }
-/* Unknown product: enter per-100g values once; saved under the barcode for next time */
-function openNewProduct(code, name){
-  const p=window._np={code, name:name||"", cal:"", pr:"", c:"", f:""};
+/* Unknown product: enter per-100g values once; saved under the barcode for next time.
+   prefill (optional) = {name,cal,pr,c,f} when correcting an existing product. */
+function openNewProduct(code, name, prefill){
+  const fix=!!prefill;
+  const p=window._np={code, name:(prefill&&prefill.name)||name||"",
+    cal:fix?prefill.cal:"", pr:fix?prefill.pr:"", c:fix?prefill.c:"", f:fix?prefill.f:""};
   document.getElementById("sheet").innerHTML=`<div class="handle"></div>
-    <h2 style="margin:2px">📦 מוצר חדש</h2>
-    <p class="sub" style="margin:0 0 10px">המוצר (ברקוד ${esc(code)}) לא נמצא במאגר. מלא את הערכים <b>ל־100 גרם</b> פעם אחת — ונשמור אותו, כך שבפעם הבאה שתסרוק אותו הוא יזוהה מיד.</p>
+    <h2 style="margin:2px">📦 ${fix?"תיקון מוצר":"מוצר חדש"}</h2>
+    <p class="sub" style="margin:0 0 10px">${fix
+      ? `עדכן את הערכים <b>ל־100 גרם</b> של המוצר (ברקוד ${esc(code)}). התיקון יישמר ב<b>מאגר המשותף</b> — וכל המשתמשים ייהנו ממנו.`
+      : `המוצר (ברקוד ${esc(code)}) לא נמצא. מלא את הערכים <b>ל־100 גרם</b> פעם אחת — נשמור אותו ב<b>מאגר המשותף</b>, כך שאתה וכל שאר המשתמשים תזהו אותו מיד בפעם הבאה.`}</p>
     <div class="card">
       <label>שם המוצר</label>
       <input id="np_name" value="${esc(p.name)}" oninput="window._np.name=this.value" placeholder="לדוגמה: גבינה לבנה 9% תנובה">
       <p class="xs muted" style="margin:8px 0 2px">ערכים ל־100 גרם (לרוב מופיע על האריזה):</p>
       <div class="field2">
-        <div><label>קלוריות</label><input id="np_cal" type="number" inputmode="numeric" oninput="window._np.cal=this.value" placeholder="חובה"></div>
-        <div><label>חלבון (גר')</label><input id="np_pr" type="number" inputmode="numeric" oninput="window._np.pr=this.value"></div>
+        <div><label>קלוריות</label><input id="np_cal" type="number" inputmode="numeric" value="${esc(p.cal)}" oninput="window._np.cal=this.value" placeholder="חובה"></div>
+        <div><label>חלבון (גר')</label><input id="np_pr" type="number" inputmode="numeric" value="${esc(p.pr)}" oninput="window._np.pr=this.value"></div>
       </div>
       <div class="field2">
-        <div><label>פחמימות (גר')</label><input id="np_c" type="number" inputmode="numeric" oninput="window._np.c=this.value"></div>
-        <div><label>שומן (גר')</label><input id="np_f" type="number" inputmode="numeric" oninput="window._np.f=this.value"></div>
+        <div><label>פחמימות (גר')</label><input id="np_c" type="number" inputmode="numeric" value="${esc(p.c)}" oninput="window._np.c=this.value"></div>
+        <div><label>שומן (גר')</label><input id="np_f" type="number" inputmode="numeric" value="${esc(p.f)}" oninput="window._np.f=this.value"></div>
       </div>
     </div>
-    <button class="btn" onclick="saveNewProduct()">המשך לבחירת כמות</button>
+    <button class="btn" onclick="saveNewProduct()">${fix?"שמור תיקון":"המשך לבחירת כמות"}</button>
     <button class="btn sec" style="margin-top:8px" onclick="setAddTab('barcode')">חזרה לסריקה</button>`;
 }
 function saveNewProduct(){
@@ -1371,8 +1395,9 @@ function saveNewProduct(){
   if(!p.name.trim()){ toast("נא להזין שם מוצר"); return; }
   const cal=+p.cal; if(!cal){ toast("נא להזין קלוריות ל־100 גרם"); return; }
   const f=[p.name.trim(),"📦",Math.round(cal),+p.pr||0,+p.c||0,+p.f||0];
-  S.barcodes[p.code]=f; save();            // learn it
-  window._gramTarget={ f };
+  S.barcodes[p.code]=f; save();            // cache locally
+  sharedBarcodePut(p.code,f);              // contribute/correct in the shared DB
+  window._gramTarget={ f, code:p.code };
   window._np=null;
   askGrams(f[0],"📦");
 }
@@ -1580,7 +1605,12 @@ function askGrams(name, emoji){
     <input id="gin" type="number" inputmode="numeric" value="${def}" autofocus oninput="this.closest('.card').querySelectorAll('.chip.on').forEach(c=>c.classList.remove('on'))">
     </div>
     <button class="btn" onclick="confirmGrams()">הוסף</button>
+    ${(window._gramTarget&&window._gramTarget.code)?`<button class="btn sec" style="margin-top:8px" onclick="correctProduct()">✏️ תקן ערכי מוצר (למאגר המשותף)</button>`:""}
     <button class="btn sec" style="margin-top:8px" onclick="renderAddSheet()">חזרה</button>`;
+}
+function correctProduct(){
+  const t=window._gramTarget; if(!t||!t.code) return; const f=t.f;
+  openNewProduct(t.code, f[0], { name:f[0], cal:f[2], pr:f[3], c:f[4], f:f[5] });
 }
 function confirmGrams(){
   const g=+document.getElementById("gin").value||0;
