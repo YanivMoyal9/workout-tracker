@@ -56,6 +56,9 @@
   .wt-reveal { display: block; margin: 2px 0 4px; background: none; border: none; cursor: pointer;
     color: #6F7277; font-size: 12.5px; font-family: inherit; padding: 4px 2px; }
   html.wt-dark .wt-reveal { color: #A7AAB0; }
+  .wt-ai-sep { border: none; border-top: 1px solid rgba(0,0,0,.08); margin: 20px 0 6px; }
+  html.wt-dark .wt-ai-sep { border-top-color: rgba(255,255,255,.10); }
+  .wt-ai-h { font-size: 15px; font-weight: 800; margin: 6px 0 10px; }
   /* Nutrition screen */
   .wt-nut-body { width: 100%; max-width: 460px; padding: 0 4px 32px; box-sizing: border-box; }
   .wt-nut-ringwrap { position: relative; width: 200px; height: 200px; margin: 6px auto 14px; }
@@ -832,10 +835,51 @@ react/cjs/react-jsx-runtime.production.js:
     }).catch(function (e) { list.innerHTML = '<div class="wt-empty">שגיאה בטעינה: ' + esc(e.message) + '</div>'; });
   }
   function aiCfg() { try { return JSON.parse(localStorage.getItem("wt-ai-cfg") || "null"); } catch (e) { return null; } }
+  function blobToB64(blob) {
+    return new Promise(function (res, rej) {
+      var r = new FileReader();
+      r.onload = function () { res(String(r.result).split(",")[1]); };
+      r.onerror = function () { rej(new Error("קריאת תמונה נכשלה")); };
+      r.readAsDataURL(blob);
+    });
+  }
   function analyzeEquipmentAI() {
-    // Real AI analysis is wired once the gateway format is known; placeholder for now.
-    if (!aiCfg()) { eqStatus("ניתוח AI עדיין לא מוגדר — בקרוב 🤖"); return; }
-    eqStatus("ניתוח AI עדיין לא מוגדר — בקרוב 🤖");
+    var cfg = aiCfg();
+    if (!cfg || !cfg.url || !cfg.key) { eqStatus("הגדר קודם AI: כלים → ☁️ סנכרון ענן → הגדרות AI"); return; }
+    if (!eqPendingBlob) { eqStatus("קודם צלם/בחר תמונה"); return; }
+    eqStatus("🤖 מנתח את המכשיר…");
+    var prompt = "זהה את מכשיר הכושר בתמונה. ענה בעברית בלבד בפורמט הבא: שורה ראשונה — שם המכשיר הקצר (2-4 מילים) ותו לא. אחר כך שורה ריקה, ואז: אילו שרירים הוא מפעיל ואיך משתמשים בו נכון (2-3 משפטים).";
+    blobToB64(eqPendingBlob).then(function (b64) {
+      var base = cleanUrl(cfg.url), model = cfg.model || "claude-opus-4-8", req;
+      if (cfg.format === "openai") {
+        req = { url: base + "/v1/chat/completions", headers: { Authorization: "Bearer " + cfg.key, "content-type": "application/json" },
+          body: JSON.stringify({ model: model, max_tokens: 700, messages: [{ role: "user", content: [
+            { type: "text", text: prompt },
+            { type: "image_url", image_url: { url: "data:image/jpeg;base64," + b64 } }
+          ] }] }) };
+      } else {
+        req = { url: base + "/v1/messages", headers: { "x-api-key": cfg.key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+          body: JSON.stringify({ model: model, max_tokens: 700, messages: [{ role: "user", content: [
+            { type: "image", source: { type: "base64", media_type: "image/jpeg", data: b64 } },
+            { type: "text", text: prompt }
+          ] }] }) };
+      }
+      return fetch(req.url, { method: "POST", headers: req.headers, body: req.body }).then(function (r) {
+        return r.text().then(function (t) { if (!r.ok) throw new Error("(" + r.status + ") " + t.slice(0, 200)); return t; });
+      });
+    }).then(function (t) {
+      var data, text = "";
+      try { data = JSON.parse(t); } catch (e) { data = null; }
+      if (data && data.content && data.content[0]) text = data.content.map(function (c) { return c.text || ""; }).join("");
+      else if (data && data.choices && data.choices[0]) text = data.choices[0].message.content || "";
+      else text = t;
+      text = (text || "").trim();
+      var firstName = (text.split("\n")[0] || "").replace(/^[*#\-\s]+/, "").trim();
+      var nameEl = document.getElementById("wt-eq-name"), notesEl = document.getElementById("wt-eq-notes");
+      if (nameEl && !nameEl.value.trim() && firstName) nameEl.value = firstName;
+      if (notesEl) notesEl.value = text;
+      eqStatus("נותח ✓ — בדוק וערוך לפי הצורך");
+    }).catch(function (e) { eqStatus("שגיאת AI: " + e.message); });
   }
   function renderEquipment() {
     eqPendingBlob = null;
@@ -1066,7 +1110,7 @@ react/cjs/react-jsx-runtime.production.js:
       '<button class="wt-btn" id="wt-import">⬆ שחזור גיבוי</button>' +
       '<a class="wt-btn" href="index.html" style="text-decoration:none">⌂ חזרה לכל האפליקציות</a>' +
       '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">' +
-      '<div class="wt-ver">מהדורה 25.06 · v17 (שמירה עמידה)</div>';
+      '<div class="wt-ver">מהדורה 25.06 · v18 (ניתוח AI)</div>';
 
     /* Rest timer overlay */
     timerOv = document.createElement("div");
@@ -1133,6 +1177,15 @@ react/cjs/react-jsx-runtime.production.js:
         '</div>' +
         '<div class="wt-sync-status" id="wt-sb-status">לא מחובר</div>' +
         '<p class="wt-sync-note">⚠️ קוד הסנכרון הוא הסוד שמגן על הנתונים — בחר ביטוי ארוך וייחודי. אל תשתף את ה-service_role key.</p>' +
+        '<hr class="wt-ai-sep">' +
+        '<h4 class="wt-ai-h">🤖 ניתוח AI למכשירים (אופציונלי)</h4>' +
+        '<label class="wt-fld"><span>AI Gateway URL</span><input id="wt-ai-url" type="url" placeholder="https://...gateway..." autocomplete="off" autocapitalize="off" spellcheck="false"></label>' +
+        '<label class="wt-fld"><span>API key</span><input id="wt-ai-key" type="password" placeholder="המפתח של ה-gateway" autocomplete="off"></label>' +
+        '<label class="wt-fld"><span>מודל</span><input id="wt-ai-model" type="text" placeholder="claude-opus-4-8" autocomplete="off"></label>' +
+        '<label class="wt-fld"><span>פורמט</span><select id="wt-ai-format"><option value="anthropic">Anthropic (x-api-key, /v1/messages)</option><option value="openai">OpenAI (Bearer, /v1/chat/completions)</option></select></label>' +
+        '<button class="wt-reveal" id="wt-ai-reveal" type="button">👁 הצג מפתח</button>' +
+        '<button class="wt-chip primary" id="wt-ai-save">שמור הגדרות AI</button>' +
+        '<div class="wt-sync-status" id="wt-ai-status">' + (aiCfg() ? "AI מוגדר ✓" : "AI לא מוגדר") + '</div>' +
       '</div>';
 
     /* Nutrition overlay */
@@ -1329,11 +1382,31 @@ react/cjs/react-jsx-runtime.production.js:
       syncOv.querySelector("#wt-sb-key").value = c.key || "";
       syncOv.querySelector("#wt-sb-code").value = c.code || "";
       sbStatus(sbConfigured() ? "מחובר · " + (sbMeta().at ? "סונכרן לאחרונה " + new Date(sbMeta().at).toLocaleString("he-IL") : "טרם סונכרן") : "לא מחובר");
+      var a = aiCfg() || {};
+      syncOv.querySelector("#wt-ai-url").value = a.url || "";
+      syncOv.querySelector("#wt-ai-key").value = a.key || "";
+      syncOv.querySelector("#wt-ai-model").value = a.model || "";
+      syncOv.querySelector("#wt-ai-format").value = a.format || "anthropic";
     }
     panel.querySelector("#wt-sync-btn").addEventListener("click", function () {
       panel.classList.remove("open");
       fillSyncForm();
       syncOv.classList.add("open");
+    });
+    syncOv.querySelector("#wt-ai-reveal").addEventListener("click", function () {
+      var k = syncOv.querySelector("#wt-ai-key"), show = k.type === "password";
+      k.type = show ? "text" : "password";
+      this.textContent = show ? "🙈 הסתר מפתח" : "👁 הצג מפתח";
+    });
+    syncOv.querySelector("#wt-ai-save").addEventListener("click", function () {
+      var url = cleanUrl(syncOv.querySelector("#wt-ai-url").value);
+      var key = syncOv.querySelector("#wt-ai-key").value.trim();
+      var model = syncOv.querySelector("#wt-ai-model").value.trim() || "claude-opus-4-8";
+      var format = syncOv.querySelector("#wt-ai-format").value;
+      if (!url || !key) { syncOv.querySelector("#wt-ai-status").textContent = "נא למלא URL ומפתח"; return; }
+      localStorage.setItem("wt-ai-cfg", JSON.stringify({ url: url, key: key, model: model, format: format }));
+      syncOv.querySelector("#wt-ai-url").value = url;
+      syncOv.querySelector("#wt-ai-status").textContent = "נשמר ✓ — עכשיו אפשר 'נתח AI' במאגר המכשירים";
     });
     syncOv.querySelector("#wt-sync-close").addEventListener("click", function () { syncOv.classList.remove("open"); });
     syncOv.querySelector("#wt-sb-reveal").addEventListener("click", function () {
