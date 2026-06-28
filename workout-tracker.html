@@ -433,6 +433,11 @@ react/cjs/react-jsx-runtime.production.js:
     plank: "פלאנק", crunch: "Crunch", legraise: "הרמות רגליים"
   };
   function epley(w, r) { return w * (1 + r / 30); } // Estimated 1RM
+  function esc(s) { // HTML-escape any data-derived string before innerHTML
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (ch) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch];
+    });
+  }
   function fmtDate(iso) {
     var d = new Date(iso);
     return String(d.getDate()).padStart(2, "0") + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + d.getFullYear();
@@ -724,7 +729,7 @@ react/cjs/react-jsx-runtime.production.js:
           '</div>' +
           '<div class="wt-nut-foot">' + nutFoot(log.length, d.date_used) + '</div>';
       })
-      .catch(function (e) { container.innerHTML = '<div class="wt-empty">שגיאה במשיכת תזונה: ' + e.message + '</div>'; });
+      .catch(function (e) { container.innerHTML = '<div class="wt-empty">שגיאה במשיכת תזונה: ' + esc(e.message) + '</div>'; });
   }
 
   /* ---------- Rest timer (independent, full-screen) ---------- */
@@ -940,7 +945,7 @@ react/cjs/react-jsx-runtime.production.js:
       '<button class="wt-btn" id="wt-import">⬆ שחזור גיבוי</button>' +
       '<a class="wt-btn" href="index.html" style="text-decoration:none">⌂ חזרה לכל האפליקציות</a>' +
       '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">' +
-      '<div class="wt-ver">מהדורה 25.06 · v12 (תיקון תאריך תזונה)</div>';
+      '<div class="wt-ver">מהדורה 25.06 · v13 (חיזוק אבטחה)</div>';
 
     /* Rest timer overlay */
     timerOv = document.createElement("div");
@@ -1087,8 +1092,8 @@ react/cjs/react-jsx-runtime.production.js:
       } else {
         list.innerHTML = recs.map(function (x) {
           return '<div class="wt-rec">' +
-            '<div class="wt-rec-main"><div class="nm">' + x.name + '</div>' +
-            '<div class="sub">' + x.rec.w + ' ק״ג × ' + x.rec.r + ' · ' + fmtDate(x.rec.date) + '</div>' +
+            '<div class="wt-rec-main"><div class="nm">' + esc(x.name) + '</div>' +
+            '<div class="sub">' + esc(x.rec.w) + ' ק״ג × ' + esc(x.rec.r) + ' · ' + esc(fmtDate(x.rec.date)) + '</div>' +
             sparkline(exSeries(x.id)) + '</div>' +
             '<div class="orm">' + Math.round(x.rec.orm) + '<small> ק״ג 1RM</small></div></div>';
         }).join("");
