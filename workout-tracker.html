@@ -82,7 +82,8 @@
   /* Equipment catalog */
   .wt-eq-wrap { width: 100%; max-width: 460px; padding: 0 16px 32px; box-sizing: border-box; }
   .wt-eq-form { display: flex; flex-direction: column; gap: 9px; margin-bottom: 18px; }
-  .wt-eq-photo { display: block; cursor: pointer; }
+  .wt-eq-photo-btns { display: flex; gap: 8px; }
+  .wt-eq-photo-btns .wt-chip { flex: 1; padding: 9px 4px; font-size: 13.5px; }
   #wt-eq-preview { height: 150px; border-radius: 14px; border: 2px dashed #C4C2BD; display: flex;
     align-items: center; justify-content: center; color: #8A8D92; font-size: 15px;
     background-size: cover; background-position: center; }
@@ -830,6 +831,12 @@ react/cjs/react-jsx-runtime.production.js:
       });
     }).catch(function (e) { list.innerHTML = '<div class="wt-empty">שגיאה בטעינה: ' + esc(e.message) + '</div>'; });
   }
+  function aiCfg() { try { return JSON.parse(localStorage.getItem("wt-ai-cfg") || "null"); } catch (e) { return null; } }
+  function analyzeEquipmentAI() {
+    // Real AI analysis is wired once the gateway format is known; placeholder for now.
+    if (!aiCfg()) { eqStatus("ניתוח AI עדיין לא מוגדר — בקרוב 🤖"); return; }
+    eqStatus("ניתוח AI עדיין לא מוגדר — בקרוב 🤖");
+  }
   function renderEquipment() {
     eqPendingBlob = null;
     var prev = document.getElementById("wt-eq-preview");
@@ -1059,7 +1066,7 @@ react/cjs/react-jsx-runtime.production.js:
       '<button class="wt-btn" id="wt-import">⬆ שחזור גיבוי</button>' +
       '<a class="wt-btn" href="index.html" style="text-decoration:none">⌂ חזרה לכל האפליקציות</a>' +
       '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">' +
-      '<div class="wt-ver">מהדורה 25.06 · v14 (מאגר מכשירים)</div>';
+      '<div class="wt-ver">מהדורה 25.06 · v15 (מצלמה/גלריה)</div>';
 
     /* Rest timer overlay */
     timerOv = document.createElement("div");
@@ -1146,14 +1153,20 @@ react/cjs/react-jsx-runtime.production.js:
       '<h2>🏋️ מאגר מכשירים</h2>' +
       '<div class="wt-eq-wrap">' +
         '<div class="wt-eq-form">' +
-          '<label class="wt-eq-photo"><input type="file" id="wt-eq-file" accept="image/*" capture="environment" style="display:none">' +
-            '<div id="wt-eq-preview">📷 הוסף תמונה</div></label>' +
+          '<div id="wt-eq-preview">📷 אין תמונה</div>' +
+          '<div class="wt-eq-photo-btns">' +
+            '<button type="button" class="wt-chip" id="wt-eq-cam">📷 צלם</button>' +
+            '<button type="button" class="wt-chip" id="wt-eq-gal">🖼️ מהגלריה</button>' +
+            '<button type="button" class="wt-chip" id="wt-eq-ai">🤖 נתח AI</button>' +
+          '</div>' +
+          '<input type="file" id="wt-eq-cam-file" accept="image/*" capture="environment" style="display:none">' +
+          '<input type="file" id="wt-eq-gal-file" accept="image/*" style="display:none">' +
           '<input id="wt-eq-name" class="wt-eq-input" placeholder="שם המכשיר (למשל: לג פרס אופקי)" autocomplete="off">' +
           '<select id="wt-eq-ex" class="wt-eq-input"><option value="">— שייך לתרגיל (אופציונלי) —</option>' +
             Object.keys(EX_NAMES).map(function (k) { return '<option value="' + k + '">' + EX_NAMES[k] + '</option>'; }).join("") +
           '</select>' +
           '<input id="wt-eq-settings" class="wt-eq-input" placeholder="הגדרות: מושב חריץ 4, גב 3..." autocomplete="off">' +
-          '<textarea id="wt-eq-notes" class="wt-eq-input" rows="2" placeholder="הערות (אופציונלי)"></textarea>' +
+          '<textarea id="wt-eq-notes" class="wt-eq-input" rows="4" placeholder="תיאור חופשי / איך להשתמש / ניתוח AI…"></textarea>' +
           '<button class="wt-chip primary" id="wt-eq-save">➕ שמור מכשיר</button>' +
           '<div class="wt-sync-status" id="wt-eq-status"></div>' +
         '</div>' +
@@ -1263,9 +1276,11 @@ react/cjs/react-jsx-runtime.production.js:
       renderEquipment();
     });
     eqOv.querySelector("#wt-eq-close").addEventListener("click", function () { eqOv.classList.remove("open"); });
-    var eqFile = eqOv.querySelector("#wt-eq-file"), eqPreview = eqOv.querySelector("#wt-eq-preview");
-    eqFile.addEventListener("change", function () {
-      var f = eqFile.files && eqFile.files[0];
+    var eqPreview = eqOv.querySelector("#wt-eq-preview");
+    var camFile = eqOv.querySelector("#wt-eq-cam-file"), galFile = eqOv.querySelector("#wt-eq-gal-file");
+    function onPickPhoto(input) {
+      var f = input.files && input.files[0];
+      input.value = "";
       if (!f) return;
       eqStatus("מעבד תמונה…");
       resizeImage(f, 1000, 0.8).then(function (blob) {
@@ -1275,7 +1290,14 @@ react/cjs/react-jsx-runtime.production.js:
         eqPreview.classList.add("has");
         eqStatus("");
       }).catch(function (e) { eqStatus("שגיאה בתמונה: " + e.message); });
-      eqFile.value = "";
+    }
+    eqOv.querySelector("#wt-eq-cam").addEventListener("click", function () { camFile.click(); });
+    eqOv.querySelector("#wt-eq-gal").addEventListener("click", function () { galFile.click(); });
+    camFile.addEventListener("change", function () { onPickPhoto(camFile); });
+    galFile.addEventListener("change", function () { onPickPhoto(galFile); });
+    eqOv.querySelector("#wt-eq-ai").addEventListener("click", function () {
+      if (!eqPendingBlob) { eqStatus("קודם צלם/בחר תמונה, ואז נתח"); return; }
+      analyzeEquipmentAI();
     });
     eqOv.querySelector("#wt-eq-save").addEventListener("click", function () {
       if (!sbConfigured()) { eqStatus("צריך קודם להגדיר סנכרון ענן"); return; }
