@@ -79,6 +79,35 @@
   .wt-nbar-fill.over { filter: saturate(1.4) brightness(.95); }
   .wt-nbar-sub { font-size: 11px; color: #8A8D92; margin-top: 3px; }
   .wt-nut-foot { font-size: 12px; color: #7C7F85; text-align: center; margin: 16px 0 30px; }
+  /* Equipment catalog */
+  .wt-eq-wrap { width: 100%; max-width: 460px; padding: 0 16px 32px; box-sizing: border-box; }
+  .wt-eq-form { display: flex; flex-direction: column; gap: 9px; margin-bottom: 18px; }
+  .wt-eq-photo { display: block; cursor: pointer; }
+  #wt-eq-preview { height: 150px; border-radius: 14px; border: 2px dashed #C4C2BD; display: flex;
+    align-items: center; justify-content: center; color: #8A8D92; font-size: 15px;
+    background-size: cover; background-position: center; }
+  html.wt-dark #wt-eq-preview { border-color: #4A4C51; }
+  #wt-eq-preview.has { border-style: solid; border-color: transparent; }
+  .wt-eq-input { width: 100%; box-sizing: border-box; padding: 11px 12px; border-radius: 10px;
+    border: 1px solid #CFCDC8; background: #fff; color: #2F3033; font-size: 14px; font-family: inherit; }
+  html.wt-dark .wt-eq-input { background: #2B2C30; border-color: #44464B; color: #E9E9EC; }
+  #wt-equipment .wt-chip.primary { width: 100%; padding: 12px; margin-top: 2px; }
+  .wt-eq-list { display: flex; flex-direction: column; gap: 10px; }
+  .wt-eq-card { display: flex; align-items: stretch; gap: 11px; background: rgba(255,255,255,.7);
+    border-radius: 14px; padding: 10px; }
+  html.wt-dark .wt-eq-card { background: rgba(255,255,255,.06); }
+  .wt-eq-img { width: 84px; height: 84px; border-radius: 10px; object-fit: cover; flex: 0 0 auto; background: #E6E4DF; }
+  .wt-eq-noimg { display: flex; align-items: center; justify-content: center; font-size: 30px; }
+  .wt-eq-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; padding-top: 2px; }
+  .wt-eq-name { font-size: 15px; font-weight: 800; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+  .wt-eq-tag { font-size: 11px; font-weight: 700; color: #2F7A3D; background: rgba(47,122,61,.12);
+    padding: 2px 8px; border-radius: 999px; }
+  .wt-eq-set { font-size: 13px; color: #444; }
+  html.wt-dark .wt-eq-set { color: #C7C9CE; }
+  .wt-eq-notes { font-size: 12px; color: #8A8D92; }
+  .wt-eq-del { background: none; border: none; cursor: pointer; font-size: 17px; align-self: flex-start;
+    opacity: .55; padding: 4px; }
+  .wt-eq-del:active { opacity: 1; }
   #wt-home { position: fixed; top: calc(10px + env(safe-area-inset-top)); right: 12px; z-index: 99998;
     width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
     font-size: 20px; text-decoration: none; background: rgba(251,250,248,.92); color: #2F3033;
@@ -732,6 +761,90 @@ react/cjs/react-jsx-runtime.production.js:
       .catch(function (e) { container.innerHTML = '<div class="wt-empty">שגיאה במשיכת תזונה: ' + esc(e.message) + '</div>'; });
   }
 
+  /* ---------- Equipment catalog (photos in Supabase Storage) ---------- */
+  var EQ_BUCKET = "equipment";
+  var eqPendingBlob = null;
+  function resizeImage(file, maxDim, quality) {
+    return new Promise(function (resolve, reject) {
+      var img = new Image(), u = URL.createObjectURL(file);
+      img.onload = function () {
+        var scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        var cw = Math.round(img.width * scale), ch = Math.round(img.height * scale);
+        var c = document.createElement("canvas"); c.width = cw; c.height = ch;
+        c.getContext("2d").drawImage(img, 0, 0, cw, ch);
+        c.toBlob(function (blob) { URL.revokeObjectURL(u); blob ? resolve(blob) : reject(new Error("resize failed")); }, "image/jpeg", quality);
+      };
+      img.onerror = function () { URL.revokeObjectURL(u); reject(new Error("לא ניתן לקרוא את התמונה")); };
+      img.src = u;
+    });
+  }
+  function sbUploadImage(blob) {
+    var c = sbCfg(), base = cleanUrl(c.url), k = (c.key || "").trim();
+    var path = Date.now() + "-" + Math.random().toString(36).slice(2) + ".jpg";
+    return fetch(base + "/storage/v1/object/" + EQ_BUCKET + "/" + path, {
+      method: "POST",
+      headers: { apikey: k, Authorization: "Bearer " + k, "Content-Type": "image/jpeg", "x-upsert": "true" },
+      body: blob
+    }).then(function (r) {
+      if (!r.ok) return r.text().then(function (t) { throw new Error("העלאת תמונה נכשלה (" + r.status + ")"); });
+      return base + "/storage/v1/object/public/" + EQ_BUCKET + "/" + path;
+    });
+  }
+  function eqList() {
+    var c = sbCfg(), base = cleanUrl(c.url);
+    return fetch(base + "/rest/v1/equipment?owner=eq." + encodeURIComponent(c.code) + "&select=*&order=created_at.desc", { headers: sbHeaders() })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
+  }
+  function eqInsert(row) {
+    var c = sbCfg(), base = cleanUrl(c.url);
+    row.owner = c.code;
+    return fetch(base + "/rest/v1/equipment", { method: "POST", headers: Object.assign(sbHeaders(), { Prefer: "return=minimal" }), body: JSON.stringify(row) })
+      .then(function (r) { if (!r.ok) return r.text().then(function (t) { throw new Error("HTTP " + r.status); }); });
+  }
+  function eqDelete(id) {
+    var c = sbCfg(), base = cleanUrl(c.url);
+    return fetch(base + "/rest/v1/equipment?id=eq." + encodeURIComponent(id), { method: "DELETE", headers: sbHeaders() })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); });
+  }
+  function eqStatus(msg) { var el = document.getElementById("wt-eq-status"); if (el) el.textContent = msg || ""; }
+  function renderEquipmentList() {
+    var list = document.getElementById("wt-eq-list");
+    if (!list) return;
+    list.innerHTML = '<div class="wt-empty">טוען…</div>';
+    eqList().then(function (rows) {
+      if (!rows.length) { list.innerHTML = '<div class="wt-empty">אין עדיין מכשירים.<br>הוסף את הראשון למעלה 📷</div>'; return; }
+      list.innerHTML = rows.map(function (m) {
+        var img = (m.image_url && /^https?:\/\//.test(m.image_url)) ? '<img class="wt-eq-img" src="' + esc(m.image_url) + '" alt="" loading="lazy">' : '<div class="wt-eq-img wt-eq-noimg">🏋️</div>';
+        var exName = m.ex_id && EX_NAMES[m.ex_id] ? '<span class="wt-eq-tag">' + esc(EX_NAMES[m.ex_id]) + '</span>' : '';
+        return '<div class="wt-eq-card">' + img +
+          '<div class="wt-eq-info"><div class="wt-eq-name">' + esc(m.name) + exName + '</div>' +
+          (m.settings ? '<div class="wt-eq-set">⚙️ ' + esc(m.settings) + '</div>' : '') +
+          (m.notes ? '<div class="wt-eq-notes">' + esc(m.notes) + '</div>' : '') + '</div>' +
+          '<button class="wt-eq-del" data-id="' + esc(m.id) + '" aria-label="מחק">🗑</button></div>';
+      }).join("");
+      list.querySelectorAll(".wt-eq-del").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          if (!confirm("למחוק את המכשיר?")) return;
+          eqDelete(btn.getAttribute("data-id")).then(renderEquipmentList).catch(function (e) { eqStatus("שגיאה: " + e.message); });
+        });
+      });
+    }).catch(function (e) { list.innerHTML = '<div class="wt-empty">שגיאה בטעינה: ' + esc(e.message) + '</div>'; });
+  }
+  function renderEquipment() {
+    eqPendingBlob = null;
+    var prev = document.getElementById("wt-eq-preview");
+    if (prev) { prev.textContent = "📷 הוסף תמונה"; prev.style.backgroundImage = ""; prev.classList.remove("has"); }
+    ["wt-eq-name", "wt-eq-settings", "wt-eq-notes"].forEach(function (id) { var el = document.getElementById(id); if (el) el.value = ""; });
+    var sel = document.getElementById("wt-eq-ex"); if (sel) sel.value = "";
+    eqStatus("");
+    if (!sbConfigured()) {
+      var list = document.getElementById("wt-eq-list");
+      if (list) list.innerHTML = '<div class="wt-empty">צריך קודם להגדיר סנכרון ענן (כלים → ☁️ סנכרון ענן).</div>';
+      return;
+    }
+    renderEquipmentList();
+  }
+
   /* ---------- Rest timer (independent, full-screen) ---------- */
   var timerOv, ringFg, timeB, timeSpan, RING_LEN, tState = null, tRAF = null, audioCtx = null, tCloseT = null;
   var panel = null; // tools panel, toggled from the bottom-nav "כלים" tab
@@ -939,13 +1052,14 @@ react/cjs/react-jsx-runtime.production.js:
       '<button class="wt-btn" id="wt-records">🏆 שיאים אישיים</button>' +
       '<button class="wt-btn" id="wt-streak-btn">🔥 עקביות ורצף</button>' +
       '<button class="wt-btn" id="wt-nut-btn">🍎 תזונה היום</button>' +
+      '<button class="wt-btn" id="wt-eq-btn">🏋️ מאגר מכשירים</button>' +
       '<button class="wt-btn" id="wt-rest">⏱ טיימר מנוחה</button>' +
       '<button class="wt-btn" id="wt-sync-btn">☁️ סנכרון ענן</button>' +
       '<button class="wt-btn" id="wt-export">⬇ ייצוא גיבוי</button>' +
       '<button class="wt-btn" id="wt-import">⬆ שחזור גיבוי</button>' +
       '<a class="wt-btn" href="index.html" style="text-decoration:none">⌂ חזרה לכל האפליקציות</a>' +
       '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">' +
-      '<div class="wt-ver">מהדורה 25.06 · v13 (חיזוק אבטחה)</div>';
+      '<div class="wt-ver">מהדורה 25.06 · v14 (מאגר מכשירים)</div>';
 
     /* Rest timer overlay */
     timerOv = document.createElement("div");
@@ -1023,11 +1137,35 @@ react/cjs/react-jsx-runtime.production.js:
       '<h2>🍎 תזונה היום</h2>' +
       '<div class="wt-nut-body" id="wt-nut-body"></div>';
 
+    /* Equipment catalog overlay */
+    var eqOv = document.createElement("div");
+    eqOv.id = "wt-equipment";
+    eqOv.className = "wt-overlay";
+    eqOv.innerHTML =
+      '<button class="wt-close" id="wt-eq-close" aria-label="סגור">✕</button>' +
+      '<h2>🏋️ מאגר מכשירים</h2>' +
+      '<div class="wt-eq-wrap">' +
+        '<div class="wt-eq-form">' +
+          '<label class="wt-eq-photo"><input type="file" id="wt-eq-file" accept="image/*" capture="environment" style="display:none">' +
+            '<div id="wt-eq-preview">📷 הוסף תמונה</div></label>' +
+          '<input id="wt-eq-name" class="wt-eq-input" placeholder="שם המכשיר (למשל: לג פרס אופקי)" autocomplete="off">' +
+          '<select id="wt-eq-ex" class="wt-eq-input"><option value="">— שייך לתרגיל (אופציונלי) —</option>' +
+            Object.keys(EX_NAMES).map(function (k) { return '<option value="' + k + '">' + EX_NAMES[k] + '</option>'; }).join("") +
+          '</select>' +
+          '<input id="wt-eq-settings" class="wt-eq-input" placeholder="הגדרות: מושב חריץ 4, גב 3..." autocomplete="off">' +
+          '<textarea id="wt-eq-notes" class="wt-eq-input" rows="2" placeholder="הערות (אופציונלי)"></textarea>' +
+          '<button class="wt-chip primary" id="wt-eq-save">➕ שמור מכשיר</button>' +
+          '<div class="wt-sync-status" id="wt-eq-status"></div>' +
+        '</div>' +
+        '<div class="wt-eq-list" id="wt-eq-list"></div>' +
+      '</div>';
+
     document.body.appendChild(panel);
     document.body.appendChild(timerOv);
     document.body.appendChild(recOv);
     document.body.appendChild(syncOv);
     document.body.appendChild(nutOv);
+    document.body.appendChild(eqOv);
     document.body.appendChild(streakOv);
 
     var homeBtn = document.createElement("a");
@@ -1118,6 +1256,44 @@ react/cjs/react-jsx-runtime.production.js:
     });
     nutOv.querySelector("#wt-nut-close").addEventListener("click", function () { nutOv.classList.remove("open"); });
 
+    /* Equipment catalog */
+    panel.querySelector("#wt-eq-btn").addEventListener("click", function () {
+      panel.classList.remove("open");
+      eqOv.classList.add("open");
+      renderEquipment();
+    });
+    eqOv.querySelector("#wt-eq-close").addEventListener("click", function () { eqOv.classList.remove("open"); });
+    var eqFile = eqOv.querySelector("#wt-eq-file"), eqPreview = eqOv.querySelector("#wt-eq-preview");
+    eqFile.addEventListener("change", function () {
+      var f = eqFile.files && eqFile.files[0];
+      if (!f) return;
+      eqStatus("מעבד תמונה…");
+      resizeImage(f, 1000, 0.8).then(function (blob) {
+        eqPendingBlob = blob;
+        eqPreview.textContent = "";
+        eqPreview.style.backgroundImage = "url(" + URL.createObjectURL(blob) + ")";
+        eqPreview.classList.add("has");
+        eqStatus("");
+      }).catch(function (e) { eqStatus("שגיאה בתמונה: " + e.message); });
+      eqFile.value = "";
+    });
+    eqOv.querySelector("#wt-eq-save").addEventListener("click", function () {
+      if (!sbConfigured()) { eqStatus("צריך קודם להגדיר סנכרון ענן"); return; }
+      var name = eqOv.querySelector("#wt-eq-name").value.trim();
+      if (!name) { eqStatus("נא להזין שם מכשיר"); return; }
+      var row = {
+        name: name,
+        ex_id: eqOv.querySelector("#wt-eq-ex").value || null,
+        settings: eqOv.querySelector("#wt-eq-settings").value.trim() || null,
+        notes: eqOv.querySelector("#wt-eq-notes").value.trim() || null
+      };
+      eqStatus("שומר…");
+      var p = eqPendingBlob ? sbUploadImage(eqPendingBlob).then(function (url) { row.image_url = url; }) : Promise.resolve();
+      p.then(function () { return eqInsert(row); })
+        .then(function () { eqStatus("נשמר ✓"); renderEquipment(); })
+        .catch(function (e) { eqStatus("שגיאה: " + e.message); });
+    });
+
     /* Cloud sync */
     sbStatusEl = syncOv.querySelector("#wt-sb-status");
     function fillSyncForm() {
@@ -1154,7 +1330,7 @@ react/cjs/react-jsx-runtime.production.js:
 
     /* Close overlays with Escape */
     document.addEventListener("keydown", function (e) {
-      if (e.key === "Escape") { closeTimer(); recOv.classList.remove("open"); streakOv.classList.remove("open"); syncOv.classList.remove("open"); nutOv.classList.remove("open"); }
+      if (e.key === "Escape") { closeTimer(); recOv.classList.remove("open"); streakOv.classList.remove("open"); syncOv.classList.remove("open"); nutOv.classList.remove("open"); eqOv.classList.remove("open"); }
     });
 
     /* Auto-open the rest timer whenever a set is marked done */
