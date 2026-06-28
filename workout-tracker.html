@@ -1066,7 +1066,7 @@ react/cjs/react-jsx-runtime.production.js:
       '<button class="wt-btn" id="wt-import">⬆ שחזור גיבוי</button>' +
       '<a class="wt-btn" href="index.html" style="text-decoration:none">⌂ חזרה לכל האפליקציות</a>' +
       '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">' +
-      '<div class="wt-ver">מהדורה 25.06 · v16 (אבחון העלאה)</div>';
+      '<div class="wt-ver">מהדורה 25.06 · v17 (שמירה עמידה)</div>';
 
     /* Rest timer overlay */
     timerOv = document.createElement("div");
@@ -1310,10 +1310,15 @@ react/cjs/react-jsx-runtime.production.js:
         notes: eqOv.querySelector("#wt-eq-notes").value.trim() || null
       };
       eqStatus("שומר…");
-      var p = eqPendingBlob ? sbUploadImage(eqPendingBlob).then(function (url) { row.image_url = url; }) : Promise.resolve();
+      var uploadErr = null;
+      // Upload the photo, but if it fails (e.g. Storage RLS), still save the
+      // machine without the image so the catalog stays usable.
+      var p = eqPendingBlob
+        ? sbUploadImage(eqPendingBlob).then(function (url) { row.image_url = url; }).catch(function (e) { uploadErr = e; })
+        : Promise.resolve();
       p.then(function () { return eqInsert(row); })
-        .then(function () { eqStatus("נשמר ✓"); renderEquipment(); })
-        .catch(function (e) { eqStatus("שגיאה: " + e.message); });
+        .then(function () { eqStatus(uploadErr ? "נשמר — אך התמונה נכשלה (" + uploadErr.message.replace(/^העלאה נכשלה[^:]*:?\s*/, "") + ")" : "נשמר ✓"); renderEquipment(); })
+        .catch(function (e) { eqStatus("שגיאה בשמירה: " + e.message); });
     });
 
     /* Cloud sync */
