@@ -787,7 +787,7 @@ react/cjs/react-jsx-runtime.production.js:
       headers: { apikey: k, Authorization: "Bearer " + k, "Content-Type": "image/jpeg", "x-upsert": "true" },
       body: blob
     }).then(function (r) {
-      if (!r.ok) return r.text().then(function (t) { throw new Error("העלאת תמונה נכשלה (" + r.status + ")"); });
+      if (!r.ok) return r.text().then(function (t) { throw new Error("העלאה נכשלה (" + r.status + "): " + (t || "").slice(0, 180)); });
       return base + "/storage/v1/object/public/" + EQ_BUCKET + "/" + path;
     });
   }
@@ -1066,7 +1066,7 @@ react/cjs/react-jsx-runtime.production.js:
       '<button class="wt-btn" id="wt-import">⬆ שחזור גיבוי</button>' +
       '<a class="wt-btn" href="index.html" style="text-decoration:none">⌂ חזרה לכל האפליקציות</a>' +
       '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">' +
-      '<div class="wt-ver">מהדורה 25.06 · v15 (מצלמה/גלריה)</div>';
+      '<div class="wt-ver">מהדורה 25.06 · v16 (אבחון העלאה)</div>';
 
     /* Rest timer overlay */
     timerOv = document.createElement("div");
