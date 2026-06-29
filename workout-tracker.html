@@ -112,6 +112,26 @@
   .wt-eq-del { background: none; border: none; cursor: pointer; font-size: 17px; align-self: flex-start;
     opacity: .55; padding: 4px; }
   .wt-eq-del:active { opacity: 1; }
+  /* Machine chip inside the workout + popup */
+  .wt-mchip { display: inline-flex; align-items: center; gap: 4px; margin: 6px 0 2px; cursor: pointer;
+    font-size: 12px; font-weight: 700; color: #2F7A3D; background: rgba(47,122,61,.12);
+    padding: 4px 10px; border-radius: 999px; -webkit-user-select: none; user-select: none; }
+  .wt-mchip:active { opacity: .7; }
+  #wt-mpop { position: fixed; inset: 0; z-index: 100002; display: none; align-items: center;
+    justify-content: center; background: rgba(0,0,0,.45); padding: 18px; box-sizing: border-box; direction: rtl; }
+  #wt-mpop.open { display: flex; }
+  .wt-mpop-card { width: 100%; max-width: 420px; max-height: 82vh; overflow-y: auto; background: #F4F3F0;
+    border-radius: 16px; padding: 14px; box-shadow: 0 16px 50px rgba(0,0,0,.35); }
+  html.wt-dark .wt-mpop-card { background: #1F2023; }
+  .wt-mpop-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .wt-mpop-head b { font-size: 17px; font-weight: 800; }
+  .wt-mpop-x { background: rgba(0,0,0,.08); border: none; width: 32px; height: 32px; border-radius: 50%;
+    cursor: pointer; font-size: 16px; color: inherit; }
+  html.wt-dark .wt-mpop-x { background: rgba(255,255,255,.12); }
+  #wt-mpop-body { display: flex; flex-direction: column; gap: 10px; }
+  #wt-mpop-body .wt-eq-card { flex-direction: column; align-items: stretch; }
+  #wt-mpop-body .wt-eq-img { width: 100%; height: 180px; flex: 0 0 auto; }
+  #wt-mpop-body .wt-eq-name { font-size: 17px; }
   #wt-home { position: fixed; top: calc(10px + env(safe-area-inset-top)); right: 12px; z-index: 99998;
     width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
     font-size: 20px; text-decoration: none; background: rgba(251,250,248,.92); color: #2F3033;
@@ -829,7 +849,7 @@ react/cjs/react-jsx-runtime.production.js:
       list.querySelectorAll(".wt-eq-del").forEach(function (btn) {
         btn.addEventListener("click", function () {
           if (!confirm("למחוק את המכשיר?")) return;
-          eqDelete(btn.getAttribute("data-id")).then(renderEquipmentList).catch(function (e) { eqStatus("שגיאה: " + e.message); });
+          eqDelete(btn.getAttribute("data-id")).then(function () { renderEquipmentList(); loadEqCache(); }).catch(function (e) { eqStatus("שגיאה: " + e.message); });
         });
       });
     }).catch(function (e) { list.innerHTML = '<div class="wt-empty">שגיאה בטעינה: ' + esc(e.message) + '</div>'; });
@@ -894,6 +914,65 @@ react/cjs/react-jsx-runtime.production.js:
       return;
     }
     renderEquipmentList();
+  }
+
+  /* ---------- Machines inside the live workout ---------- */
+  var EX_FULL = {
+    bench: "לחיצת חזה (מכונה / מוט)", latpd: "מתח בסיוע / Lat Pulldown", ohp: "לחיצת כתפיים",
+    row: "חתירה בישיבה", fly: "פרפר חזה", facepull: "Face Pull", latraise: "הרחקת כתפיים לצדדים",
+    triceps: "פשיטת מרפקים (יד אחורית)", curl: "כפיפת מרפקים במוט", hammer: "כפיפת מרפקים פטישים",
+    squat: "סקוואט", rdl: "דדליפט רומני", legpress: "לחיצת רגליים", hamcurl: "כפיפת ברכיים (Hamstring Curl)",
+    calf: "הרמות עקב בעמידה", plank: "פלאנק", crunch: "Crunch Machine", legraise: "הרמות רגליים"
+  };
+  var FULL_TO_EX = {};
+  Object.keys(EX_FULL).forEach(function (k) { FULL_TO_EX[EX_FULL[k]] = k; });
+  var eqByEx = {};
+  function loadEqCache() {
+    try { eqByEx = JSON.parse(localStorage.getItem("wt-equipment-cache") || "{}"); } catch (e) { eqByEx = {}; }
+    injectWorkoutMachineChips();
+    if (!sbConfigured()) return;
+    eqList().then(function (rows) {
+      var m = {};
+      rows.forEach(function (r) { if (r.ex_id) { (m[r.ex_id] = m[r.ex_id] || []).push(r); } });
+      eqByEx = m;
+      localStorage.setItem("wt-equipment-cache", JSON.stringify(m));
+      injectWorkoutMachineChips();
+    }).catch(function () {});
+  }
+  function openMachinePopup(exId) {
+    var pop = document.getElementById("wt-mpop");
+    if (!pop) return;
+    pop.querySelector("#wt-mpop-title").textContent = "🏋️ " + (EX_NAMES[exId] || exId);
+    var body = pop.querySelector("#wt-mpop-body"), machines = eqByEx[exId] || [];
+    if (!machines.length) {
+      body.innerHTML = '<div class="wt-empty">אין מכשיר משויך.<br>הוסף ב-כלים → 🏋️ מאגר מכשירים.</div>';
+    } else {
+      body.innerHTML = machines.map(function (m) {
+        var img = (m.image_url && /^https?:\/\//.test(m.image_url)) ? '<img class="wt-eq-img" src="' + esc(m.image_url) + '" alt="">' : '<div class="wt-eq-img wt-eq-noimg">🏋️</div>';
+        return '<div class="wt-eq-card">' + img + '<div class="wt-eq-info"><div class="wt-eq-name">' + esc(m.name) + '</div>' +
+          (m.settings ? '<div class="wt-eq-set">⚙️ ' + esc(m.settings) + '</div>' : '') +
+          (m.notes ? '<div class="wt-eq-notes">' + esc(m.notes) + '</div>' : '') + '</div></div>';
+      }).join("");
+    }
+    pop.classList.add("open");
+  }
+  function injectWorkoutMachineChips() {
+    var root = document.getElementById("root");
+    if (!root) return;
+    var keys = Object.keys(eqByEx);
+    if (!keys.length) return; // no linked machines -> nothing to inject
+    root.querySelectorAll("div").forEach(function (el) {
+      if (el.children.length) return; // only leaf text nodes (the title element)
+      var exId = FULL_TO_EX[(el.textContent || "").trim()];
+      if (!exId || !(eqByEx[exId] && eqByEx[exId].length)) return;
+      var sib = el.nextElementSibling;
+      if (sib && sib.classList && sib.classList.contains("wt-mchip")) return;
+      var chip = document.createElement("span");
+      chip.className = "wt-mchip";
+      chip.textContent = "🏋️ מכשיר";
+      chip.addEventListener("click", function (e) { e.stopPropagation(); openMachinePopup(exId); });
+      if (el.parentNode) el.parentNode.insertBefore(chip, el.nextSibling);
+    });
   }
 
   /* ---------- Rest timer (independent, full-screen) ---------- */
@@ -1072,7 +1151,7 @@ react/cjs/react-jsx-runtime.production.js:
   }
   function scheduleRefresh() {
     clearTimeout(navHookT);
-    navHookT = setTimeout(function () { ensureToolsTab(); refreshActiveTab(); }, 40);
+    navHookT = setTimeout(function () { ensureToolsTab(); refreshActiveTab(); injectWorkoutMachineChips(); }, 40);
   }
   function installNavHook() {
     var root = document.getElementById("root");
@@ -1110,7 +1189,7 @@ react/cjs/react-jsx-runtime.production.js:
       '<button class="wt-btn" id="wt-import">⬆ שחזור גיבוי</button>' +
       '<a class="wt-btn" href="index.html" style="text-decoration:none">⌂ חזרה לכל האפליקציות</a>' +
       '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">' +
-      '<div class="wt-ver">מהדורה 25.06 · v18 (ניתוח AI)</div>';
+      '<div class="wt-ver">מהדורה 25.06 · v19 (מכשירים באימון)</div>';
 
     /* Rest timer overlay */
     timerOv = document.createElement("div");
@@ -1233,6 +1312,19 @@ react/cjs/react-jsx-runtime.production.js:
     document.body.appendChild(nutOv);
     document.body.appendChild(eqOv);
     document.body.appendChild(streakOv);
+
+    /* Machine popup (opened from a chip next to a workout exercise) */
+    var mpop = document.createElement("div");
+    mpop.id = "wt-mpop";
+    mpop.innerHTML =
+      '<div class="wt-mpop-card">' +
+        '<div class="wt-mpop-head"><b id="wt-mpop-title"></b>' +
+        '<button class="wt-mpop-x" id="wt-mpop-close" aria-label="סגור">✕</button></div>' +
+        '<div id="wt-mpop-body"></div>' +
+      '</div>';
+    document.body.appendChild(mpop);
+    mpop.addEventListener("click", function (e) { if (e.target === mpop) mpop.classList.remove("open"); });
+    mpop.querySelector("#wt-mpop-close").addEventListener("click", function () { mpop.classList.remove("open"); });
 
     var homeBtn = document.createElement("a");
     homeBtn.id = "wt-home";
@@ -1370,7 +1462,7 @@ react/cjs/react-jsx-runtime.production.js:
         ? sbUploadImage(eqPendingBlob).then(function (url) { row.image_url = url; }).catch(function (e) { uploadErr = e; })
         : Promise.resolve();
       p.then(function () { return eqInsert(row); })
-        .then(function () { eqStatus(uploadErr ? "נשמר — אך התמונה נכשלה (" + uploadErr.message.replace(/^העלאה נכשלה[^:]*:?\s*/, "") + ")" : "נשמר ✓"); renderEquipment(); })
+        .then(function () { eqStatus(uploadErr ? "נשמר — אך התמונה נכשלה (" + uploadErr.message.replace(/^העלאה נכשלה[^:]*:?\s*/, "") + ")" : "נשמר ✓"); renderEquipment(); loadEqCache(); })
         .catch(function (e) { eqStatus("שגיאה בשמירה: " + e.message); });
     });
 
@@ -1438,6 +1530,9 @@ react/cjs/react-jsx-runtime.production.js:
 
     /* Start cloud sync if configured */
     installCloudSync();
+
+    /* Load equipment cache (for machine chips inside the workout) */
+    loadEqCache();
 
     /* Keep the modern bottom-nav active tab highlighted */
     installNavHook();
