@@ -87,11 +87,22 @@
   .wt-eq-form { display: flex; flex-direction: column; gap: 9px; margin-bottom: 18px; }
   .wt-eq-photo-btns { display: flex; gap: 8px; }
   .wt-eq-photo-btns .wt-chip { flex: 1; padding: 9px 4px; font-size: 13.5px; }
-  #wt-eq-preview { height: 150px; border-radius: 14px; border: 2px dashed #C4C2BD; display: flex;
-    align-items: center; justify-content: center; color: #8A8D92; font-size: 15px;
+  #wt-eq-thumbs { display: flex; flex-wrap: wrap; gap: 8px; min-height: 56px; }
+  .wt-eq-nothumb { border: 2px dashed #C4C2BD; border-radius: 14px; width: 100%; min-height: 70px;
+    display: flex; align-items: center; justify-content: center; color: #8A8D92; font-size: 13.5px;
+    text-align: center; padding: 6px; box-sizing: border-box; }
+  html.wt-dark .wt-eq-nothumb { border-color: #4A4C51; }
+  .wt-thumb { position: relative; width: 84px; height: 84px; border-radius: 10px;
     background-size: cover; background-position: center; }
-  html.wt-dark #wt-eq-preview { border-color: #4A4C51; }
-  #wt-eq-preview.has { border-style: solid; border-color: transparent; }
+  .wt-thumb-x { position: absolute; top: -6px; left: -6px; width: 22px; height: 22px; border-radius: 50%;
+    border: none; background: #2F3033; color: #fff; font-size: 12px; cursor: pointer; line-height: 22px; padding: 0; }
+  .wt-eq-imgwrap { position: relative; flex: 0 0 auto; }
+  .wt-eq-count { position: absolute; bottom: 4px; right: 4px; background: rgba(0,0,0,.6); color: #fff;
+    font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 999px; }
+  .wt-mpop-machine { background: rgba(0,0,0,.04); border-radius: 12px; padding: 11px; }
+  html.wt-dark .wt-mpop-machine { background: rgba(255,255,255,.05); }
+  .wt-mpop-imgs { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+  .wt-mpop-imgs .wt-eq-img { width: 100%; height: auto; max-height: 320px; object-fit: contain; background: #E6E4DF; }
   .wt-eq-input { width: 100%; box-sizing: border-box; padding: 11px 12px; border-radius: 10px;
     border: 1px solid #CFCDC8; background: #fff; color: #2F3033; font-size: 14px; font-family: inherit; }
   html.wt-dark .wt-eq-input { background: #2B2C30; border-color: #44464B; color: #E9E9EC; }
@@ -129,8 +140,6 @@
     cursor: pointer; font-size: 16px; color: inherit; }
   html.wt-dark .wt-mpop-x { background: rgba(255,255,255,.12); }
   #wt-mpop-body { display: flex; flex-direction: column; gap: 10px; }
-  #wt-mpop-body .wt-eq-card { flex-direction: column; align-items: stretch; }
-  #wt-mpop-body .wt-eq-img { width: 100%; height: 180px; flex: 0 0 auto; }
   #wt-mpop-body .wt-eq-name { font-size: 17px; }
   #wt-home { position: fixed; top: calc(10px + env(safe-area-inset-top)); right: 12px; z-index: 99998;
     width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
@@ -787,7 +796,12 @@ react/cjs/react-jsx-runtime.production.js:
 
   /* ---------- Equipment catalog (photos in Supabase Storage) ---------- */
   var EQ_BUCKET = "equipment";
-  var eqPendingBlob = null;
+  var eqPendingBlobs = []; // multiple photos staged before save
+  var eqRows = []; // last-rendered catalog rows (for opening a machine by id)
+  function imagesOf(m) { // all image URLs of a machine (back-compat with single image_url)
+    var arr = (m && Array.isArray(m.images) && m.images.length) ? m.images : (m && m.image_url ? [m.image_url] : []);
+    return arr.filter(function (u) { return /^https?:\/\//.test(u); });
+  }
   function resizeImage(file, maxDim, quality) {
     return new Promise(function (resolve, reject) {
       var img = new Image(), u = URL.createObjectURL(file);
@@ -837,19 +851,29 @@ react/cjs/react-jsx-runtime.production.js:
     list.innerHTML = '<div class="wt-empty">טוען…</div>';
     eqList().then(function (rows) {
       if (!rows.length) { list.innerHTML = '<div class="wt-empty">אין עדיין מכשירים.<br>הוסף את הראשון למעלה 📷</div>'; return; }
+      eqRows = rows;
       list.innerHTML = rows.map(function (m) {
-        var img = (m.image_url && /^https?:\/\//.test(m.image_url)) ? '<img class="wt-eq-img" src="' + esc(m.image_url) + '" alt="" loading="lazy">' : '<div class="wt-eq-img wt-eq-noimg">🏋️</div>';
+        var imgs = imagesOf(m);
+        var img = imgs.length ? '<img class="wt-eq-img" src="' + esc(imgs[0]) + '" alt="" loading="lazy">' : '<div class="wt-eq-img wt-eq-noimg">🏋️</div>';
+        var badge = imgs.length > 1 ? '<span class="wt-eq-count">📷 ' + imgs.length + '</span>' : '';
         var exName = m.ex_id && EX_NAMES[m.ex_id] ? '<span class="wt-eq-tag">' + esc(EX_NAMES[m.ex_id]) + '</span>' : '';
-        return '<div class="wt-eq-card">' + img +
+        return '<div class="wt-eq-card" data-open="' + esc(m.id) + '"><div class="wt-eq-imgwrap">' + img + badge + '</div>' +
           '<div class="wt-eq-info"><div class="wt-eq-name">' + esc(m.name) + exName + '</div>' +
           (m.settings ? '<div class="wt-eq-set">⚙️ ' + esc(m.settings) + '</div>' : '') +
           (m.notes ? '<div class="wt-eq-notes">' + esc(m.notes) + '</div>' : '') + '</div>' +
           '<button class="wt-eq-del" data-id="' + esc(m.id) + '" aria-label="מחק">🗑</button></div>';
       }).join("");
       list.querySelectorAll(".wt-eq-del").forEach(function (btn) {
-        btn.addEventListener("click", function () {
+        btn.addEventListener("click", function (e) {
+          e.stopPropagation();
           if (!confirm("למחוק את המכשיר?")) return;
           eqDelete(btn.getAttribute("data-id")).then(function () { renderEquipmentList(); loadEqCache(); }).catch(function (e) { eqStatus("שגיאה: " + e.message); });
+        });
+      });
+      list.querySelectorAll(".wt-eq-card").forEach(function (card) {
+        card.addEventListener("click", function () {
+          var m = eqRows.filter(function (x) { return String(x.id) === card.getAttribute("data-open"); })[0];
+          if (m) openSingleMachine(m);
         });
       });
     }).catch(function (e) { list.innerHTML = '<div class="wt-empty">שגיאה בטעינה: ' + esc(e.message) + '</div>'; });
@@ -866,10 +890,10 @@ react/cjs/react-jsx-runtime.production.js:
   function analyzeEquipmentAI() {
     var cfg = aiCfg();
     if (!cfg || !cfg.url || !cfg.key) { eqStatus("הגדר קודם AI: כלים → ☁️ סנכרון ענן → הגדרות AI"); return; }
-    if (!eqPendingBlob) { eqStatus("קודם צלם/בחר תמונה"); return; }
+    if (!eqPendingBlobs.length) { eqStatus("קודם צלם/בחר תמונה"); return; }
     eqStatus("🤖 מנתח את המכשיר…");
     var prompt = "זהה את מכשיר הכושר בתמונה. ענה בעברית בלבד בפורמט הבא: שורה ראשונה — שם המכשיר הקצר (2-4 מילים) ותו לא. אחר כך שורה ריקה, ואז: אילו שרירים הוא מפעיל ואיך משתמשים בו נכון (2-3 משפטים).";
-    blobToB64(eqPendingBlob).then(function (b64) {
+    blobToB64(eqPendingBlobs[0]).then(function (b64) {
       var base = cleanUrl(cfg.url), model = cfg.model || "claude-opus-4-8", req;
       if (cfg.format === "openai") {
         req = { url: base + "/v1/chat/completions", headers: { Authorization: "Bearer " + cfg.key, "content-type": "application/json" },
@@ -901,10 +925,20 @@ react/cjs/react-jsx-runtime.production.js:
       eqStatus("נותח ✓ — בדוק וערוך לפי הצורך");
     }).catch(function (e) { eqStatus("שגיאת AI: " + e.message); });
   }
+  function renderThumbs() {
+    var box = document.getElementById("wt-eq-thumbs");
+    if (!box) return;
+    if (!eqPendingBlobs.length) { box.innerHTML = '<div class="wt-eq-nothumb">📷 אין תמונות — צלם או הוסף מהגלריה (אפשר כמה)</div>'; return; }
+    box.innerHTML = eqPendingBlobs.map(function (b, i) {
+      return '<div class="wt-thumb" style="background-image:url(' + URL.createObjectURL(b) + ')"><button type="button" class="wt-thumb-x" data-i="' + i + '" aria-label="הסר">✕</button></div>';
+    }).join("");
+    box.querySelectorAll(".wt-thumb-x").forEach(function (btn) {
+      btn.addEventListener("click", function () { eqPendingBlobs.splice(+btn.getAttribute("data-i"), 1); renderThumbs(); });
+    });
+  }
   function renderEquipment() {
-    eqPendingBlob = null;
-    var prev = document.getElementById("wt-eq-preview");
-    if (prev) { prev.textContent = "📷 הוסף תמונה"; prev.style.backgroundImage = ""; prev.classList.remove("has"); }
+    eqPendingBlobs = [];
+    renderThumbs();
     ["wt-eq-name", "wt-eq-settings", "wt-eq-notes"].forEach(function (id) { var el = document.getElementById(id); if (el) el.value = ""; });
     var sel = document.getElementById("wt-eq-ex"); if (sel) sel.value = "";
     eqStatus("");
@@ -939,21 +973,29 @@ react/cjs/react-jsx-runtime.production.js:
       injectWorkoutMachineChips();
     }).catch(function () {});
   }
+  function machineHtml(m) {
+    var imgs = imagesOf(m);
+    var gallery = imgs.length
+      ? '<div class="wt-mpop-imgs">' + imgs.map(function (u) { return '<img class="wt-eq-img" src="' + esc(u) + '" alt="">'; }).join("") + '</div>'
+      : '<div class="wt-eq-img wt-eq-noimg">🏋️</div>';
+    return '<div class="wt-mpop-machine"><div class="wt-eq-name">' + esc(m.name) + '</div>' +
+      (m.settings ? '<div class="wt-eq-set">⚙️ ' + esc(m.settings) + '</div>' : '') +
+      (m.notes ? '<div class="wt-eq-notes">' + esc(m.notes) + '</div>' : '') + gallery + '</div>';
+  }
   function openMachinePopup(exId) {
     var pop = document.getElementById("wt-mpop");
     if (!pop) return;
     pop.querySelector("#wt-mpop-title").textContent = "🏋️ " + (EX_NAMES[exId] || exId);
     var body = pop.querySelector("#wt-mpop-body"), machines = eqByEx[exId] || [];
-    if (!machines.length) {
-      body.innerHTML = '<div class="wt-empty">אין מכשיר משויך.<br>הוסף ב-כלים → 🏋️ מאגר מכשירים.</div>';
-    } else {
-      body.innerHTML = machines.map(function (m) {
-        var img = (m.image_url && /^https?:\/\//.test(m.image_url)) ? '<img class="wt-eq-img" src="' + esc(m.image_url) + '" alt="">' : '<div class="wt-eq-img wt-eq-noimg">🏋️</div>';
-        return '<div class="wt-eq-card">' + img + '<div class="wt-eq-info"><div class="wt-eq-name">' + esc(m.name) + '</div>' +
-          (m.settings ? '<div class="wt-eq-set">⚙️ ' + esc(m.settings) + '</div>' : '') +
-          (m.notes ? '<div class="wt-eq-notes">' + esc(m.notes) + '</div>' : '') + '</div></div>';
-      }).join("");
-    }
+    body.innerHTML = machines.length ? machines.map(machineHtml).join("")
+      : '<div class="wt-empty">אין מכשיר משויך.<br>הוסף ב-כלים → 🏋️ מאגר מכשירים.</div>';
+    pop.classList.add("open");
+  }
+  function openSingleMachine(m) {
+    var pop = document.getElementById("wt-mpop");
+    if (!pop) return;
+    pop.querySelector("#wt-mpop-title").textContent = "🏋️ " + (m.name || "מכשיר");
+    pop.querySelector("#wt-mpop-body").innerHTML = machineHtml(m);
     pop.classList.add("open");
   }
   function injectWorkoutMachineChips() {
@@ -1189,7 +1231,7 @@ react/cjs/react-jsx-runtime.production.js:
       '<button class="wt-btn" id="wt-import">⬆ שחזור גיבוי</button>' +
       '<a class="wt-btn" href="index.html" style="text-decoration:none">⌂ חזרה לכל האפליקציות</a>' +
       '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">' +
-      '<div class="wt-ver">מהדורה 25.06 · v19 (מכשירים באימון)</div>';
+      '<div class="wt-ver">מהדורה 25.06 · v20 (כמה תמונות)</div>';
 
     /* Rest timer overlay */
     timerOv = document.createElement("div");
@@ -1285,14 +1327,14 @@ react/cjs/react-jsx-runtime.production.js:
       '<h2>🏋️ מאגר מכשירים</h2>' +
       '<div class="wt-eq-wrap">' +
         '<div class="wt-eq-form">' +
-          '<div id="wt-eq-preview">📷 אין תמונה</div>' +
+          '<div id="wt-eq-thumbs"></div>' +
           '<div class="wt-eq-photo-btns">' +
             '<button type="button" class="wt-chip" id="wt-eq-cam">📷 צלם</button>' +
             '<button type="button" class="wt-chip" id="wt-eq-gal">🖼️ מהגלריה</button>' +
             '<button type="button" class="wt-chip" id="wt-eq-ai">🤖 נתח AI</button>' +
           '</div>' +
           '<input type="file" id="wt-eq-cam-file" accept="image/*" capture="environment" style="display:none">' +
-          '<input type="file" id="wt-eq-gal-file" accept="image/*" style="display:none">' +
+          '<input type="file" id="wt-eq-gal-file" accept="image/*" multiple style="display:none">' +
           '<input id="wt-eq-name" class="wt-eq-input" placeholder="שם המכשיר (למשל: לג פרס אופקי)" autocomplete="off">' +
           '<select id="wt-eq-ex" class="wt-eq-input"><option value="">— שייך לתרגיל (אופציונלי) —</option>' +
             Object.keys(EX_NAMES).map(function (k) { return '<option value="' + k + '">' + EX_NAMES[k] + '</option>'; }).join("") +
@@ -1421,27 +1463,22 @@ react/cjs/react-jsx-runtime.production.js:
       renderEquipment();
     });
     eqOv.querySelector("#wt-eq-close").addEventListener("click", function () { eqOv.classList.remove("open"); });
-    var eqPreview = eqOv.querySelector("#wt-eq-preview");
     var camFile = eqOv.querySelector("#wt-eq-cam-file"), galFile = eqOv.querySelector("#wt-eq-gal-file");
     function onPickPhoto(input) {
-      var f = input.files && input.files[0];
+      var files = input.files ? Array.prototype.slice.call(input.files) : [];
       input.value = "";
-      if (!f) return;
-      eqStatus("מעבד תמונה…");
-      resizeImage(f, 1000, 0.8).then(function (blob) {
-        eqPendingBlob = blob;
-        eqPreview.textContent = "";
-        eqPreview.style.backgroundImage = "url(" + URL.createObjectURL(blob) + ")";
-        eqPreview.classList.add("has");
-        eqStatus("");
-      }).catch(function (e) { eqStatus("שגיאה בתמונה: " + e.message); });
+      if (!files.length) return;
+      eqStatus("מעבד תמונות…");
+      Promise.all(files.map(function (f) { return resizeImage(f, 1000, 0.8); }))
+        .then(function (blobs) { blobs.forEach(function (b) { eqPendingBlobs.push(b); }); renderThumbs(); eqStatus(""); })
+        .catch(function (e) { eqStatus("שגיאה בתמונה: " + e.message); });
     }
     eqOv.querySelector("#wt-eq-cam").addEventListener("click", function () { camFile.click(); });
     eqOv.querySelector("#wt-eq-gal").addEventListener("click", function () { galFile.click(); });
     camFile.addEventListener("change", function () { onPickPhoto(camFile); });
     galFile.addEventListener("change", function () { onPickPhoto(galFile); });
     eqOv.querySelector("#wt-eq-ai").addEventListener("click", function () {
-      if (!eqPendingBlob) { eqStatus("קודם צלם/בחר תמונה, ואז נתח"); return; }
+      if (!eqPendingBlobs.length) { eqStatus("קודם צלם/בחר תמונה, ואז נתח"); return; }
       analyzeEquipmentAI();
     });
     eqOv.querySelector("#wt-eq-save").addEventListener("click", function () {
@@ -1454,16 +1491,22 @@ react/cjs/react-jsx-runtime.production.js:
         settings: eqOv.querySelector("#wt-eq-settings").value.trim() || null,
         notes: eqOv.querySelector("#wt-eq-notes").value.trim() || null
       };
-      eqStatus("שומר…");
-      var uploadErr = null;
-      // Upload the photo, but if it fails (e.g. Storage RLS), still save the
-      // machine without the image so the catalog stays usable.
-      var p = eqPendingBlob
-        ? sbUploadImage(eqPendingBlob).then(function (url) { row.image_url = url; }).catch(function (e) { uploadErr = e; })
-        : Promise.resolve();
-      p.then(function () { return eqInsert(row); })
-        .then(function () { eqStatus(uploadErr ? "נשמר — אך התמונה נכשלה (" + uploadErr.message.replace(/^העלאה נכשלה[^:]*:?\s*/, "") + ")" : "נשמר ✓"); renderEquipment(); loadEqCache(); })
-        .catch(function (e) { eqStatus("שגיאה בשמירה: " + e.message); });
+      var blobs = eqPendingBlobs.slice();
+      eqStatus(blobs.length ? "מעלה תמונות ושומר…" : "שומר…");
+      // Upload each photo; keep whatever succeeds. Still save even if some/all
+      // uploads fail (e.g. Storage RLS), so the catalog stays usable.
+      var up = blobs.length
+        ? Promise.all(blobs.map(function (b) { return sbUploadImage(b).then(function (u) { return u; }).catch(function () { return null; }); }))
+        : Promise.resolve([]);
+      up.then(function (urls) {
+        var ok = urls.filter(Boolean);
+        row.images = ok;
+        row.image_url = ok[0] || null;
+        return eqInsert(row).then(function () { return blobs.length - ok.length; });
+      }).then(function (failed) {
+        eqStatus(failed > 0 ? "נשמר — " + failed + " תמונות נכשלו בהעלאה" : "נשמר ✓");
+        renderEquipment(); loadEqCache();
+      }).catch(function (e) { eqStatus("שגיאה בשמירה: " + e.message); });
     });
 
     /* Cloud sync */
