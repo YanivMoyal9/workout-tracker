@@ -128,6 +128,23 @@
     font-size: 12px; font-weight: 700; color: #2F7A3D; background: rgba(47,122,61,.12);
     padding: 4px 10px; border-radius: 999px; -webkit-user-select: none; user-select: none; }
   .wt-mchip:active { opacity: .7; }
+  .wt-winject { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 2px; }
+  .wt-sub-banner { display: inline-flex; align-items: center; font-size: 12.5px; font-weight: 700;
+    color: #B45309; background: rgba(217,119,6,.13); padding: 4px 11px; border-radius: 999px; }
+  .wt-sub-banner.skip { color: #6F7277; background: rgba(124,127,133,.15); text-decoration: line-through; }
+  html.wt-dark .wt-sub-banner { color: #F0B868; }
+  /* Substitution config screen */
+  .wt-subs-body { width: 100%; max-width: 460px; padding: 0 16px 32px; box-sizing: border-box; }
+  .wt-subs-help { font-size: 13px; color: #6F7277; margin: 4px 0 14px; line-height: 1.5; }
+  html.wt-dark .wt-subs-help { color: #A7AAB0; }
+  .wt-subs-day { font-size: 15px; font-weight: 800; margin: 16px 0 8px; }
+  .wt-sub-row { display: flex; align-items: center; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
+  .wt-sub-ex { flex: 0 0 100%; font-size: 13.5px; font-weight: 700; }
+  .wt-sub-input { flex: 1 1 60%; box-sizing: border-box; padding: 9px 11px; border-radius: 9px;
+    border: 1px solid #CFCDC8; background: #fff; color: #2F3033; font-size: 13.5px; font-family: inherit; }
+  html.wt-dark .wt-sub-input { background: #2B2C30; border-color: #44464B; color: #E9E9EC; }
+  .wt-sub-skip { display: flex; align-items: center; gap: 5px; font-size: 13px; color: #6F7277; white-space: nowrap; }
+  #wt-subs .wt-chip.primary { width: 100%; padding: 12px; margin-top: 16px; }
   #wt-mpop { position: fixed; inset: 0; z-index: 100002; display: none; align-items: center;
     justify-content: center; background: rgba(0,0,0,.45); padding: 18px; box-sizing: border-box; direction: rtl; }
   #wt-mpop.open { display: flex; }
@@ -963,14 +980,14 @@ react/cjs/react-jsx-runtime.production.js:
   var eqByEx = {};
   function loadEqCache() {
     try { eqByEx = JSON.parse(localStorage.getItem("wt-equipment-cache") || "{}"); } catch (e) { eqByEx = {}; }
-    injectWorkoutMachineChips();
+    injectWorkoutOverlays();
     if (!sbConfigured()) return;
     eqList().then(function (rows) {
       var m = {};
       rows.forEach(function (r) { if (r.ex_id) { (m[r.ex_id] = m[r.ex_id] || []).push(r); } });
       eqByEx = m;
       localStorage.setItem("wt-equipment-cache", JSON.stringify(m));
-      injectWorkoutMachineChips();
+      injectWorkoutOverlays();
     }).catch(function () {});
   }
   function machineHtml(m) {
@@ -998,22 +1015,83 @@ react/cjs/react-jsx-runtime.production.js:
     pop.querySelector("#wt-mpop-body").innerHTML = machineHtml(m);
     pop.classList.add("open");
   }
-  function injectWorkoutMachineChips() {
+  /* Program substitutions: per exercise the user can do a different movement
+     or skip it. Shown as a banner next to the exercise during the workout. */
+  var EX_PROGRAM = {
+    A: ["bench", "latpd", "ohp", "row", "fly", "facepull", "latraise", "triceps", "curl", "hammer"],
+    B: ["squat", "rdl", "legpress", "hamcurl", "calf", "plank", "crunch", "legraise"]
+  };
+  var subsByEx = {};
+  function loadSubsCache() {
+    try { subsByEx = JSON.parse(localStorage.getItem("wt-subs-cache") || "{}"); } catch (e) { subsByEx = {}; }
+    injectWorkoutOverlays();
+    if (!sbConfigured()) return;
+    var c = sbCfg();
+    fetch(cleanUrl(c.url) + "/rest/v1/ex_subs?owner=eq." + encodeURIComponent(c.code) + "&select=*", { headers: sbHeaders() })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(function (rows) {
+        var m = {};
+        rows.forEach(function (r) { m[r.ex_id] = { mode: r.mode, label: r.label }; });
+        subsByEx = m;
+        localStorage.setItem("wt-subs-cache", JSON.stringify(m));
+        injectWorkoutOverlays();
+      }).catch(function () {});
+  }
+  function subsUpsert(exId, mode, label) {
+    var c = sbCfg();
+    return fetch(cleanUrl(c.url) + "/rest/v1/ex_subs", {
+      method: "POST", headers: Object.assign(sbHeaders(), { Prefer: "resolution=merge-duplicates,return=minimal" }),
+      body: JSON.stringify({ owner: c.code, ex_id: exId, mode: mode, label: label || null, updated_at: new Date().toISOString() })
+    }).then(function (r) { if (!r.ok) return r.text().then(function (t) { throw new Error("HTTP " + r.status); }); });
+  }
+  function subsDelete(exId) {
+    var c = sbCfg();
+    return fetch(cleanUrl(c.url) + "/rest/v1/ex_subs?owner=eq." + encodeURIComponent(c.code) + "&ex_id=eq." + encodeURIComponent(exId), { method: "DELETE", headers: sbHeaders() })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); });
+  }
+  function renderSubs(container) {
+    if (!sbConfigured()) { container.innerHTML = '<div class="wt-empty">צריך קודם להגדיר סנכרון ענן (כלים → ☁️ סנכרון ענן).</div>'; return; }
+    var html = '<div class="wt-subs-help">לתרגיל שאתה לא עושה — כתוב מה אתה עושה במקום, או סמן "מדלג". זה יוצג באימון ליד התרגיל.</div>';
+    ["A", "B"].forEach(function (day) {
+      html += '<h4 class="wt-subs-day">' + (day === "A" ? "אימון A · עליון" : "אימון B · תחתון") + '</h4>';
+      EX_PROGRAM[day].forEach(function (exId) {
+        var s = subsByEx[exId] || {};
+        html += '<div class="wt-sub-row"><div class="wt-sub-ex">' + esc(EX_NAMES[exId] || exId) + '</div>' +
+          '<input class="wt-sub-input" data-ex="' + exId + '" placeholder="במקום זה אני עושה…" value="' + esc(s.mode === "replace" ? (s.label || "") : "") + '" autocomplete="off">' +
+          '<label class="wt-sub-skip"><input type="checkbox" data-skip="' + exId + '"' + (s.mode === "skip" ? " checked" : "") + '> מדלג</label></div>';
+      });
+    });
+    html += '<button class="wt-chip primary" id="wt-subs-save">שמור התאמות</button>' +
+      '<div class="wt-sync-status" id="wt-subs-status"></div>';
+    container.innerHTML = html;
+  }
+  function injectWorkoutOverlays() {
     var root = document.getElementById("root");
     if (!root) return;
-    var keys = Object.keys(eqByEx);
-    if (!keys.length) return; // no linked machines -> nothing to inject
+    if (!Object.keys(eqByEx).length && !Object.keys(subsByEx).length) return;
     root.querySelectorAll("div").forEach(function (el) {
-      if (el.children.length) return; // only leaf text nodes (the title element)
+      if (el.children.length) return; // leaf text node = the exercise title
       var exId = FULL_TO_EX[(el.textContent || "").trim()];
-      if (!exId || !(eqByEx[exId] && eqByEx[exId].length)) return;
-      var sib = el.nextElementSibling;
-      if (sib && sib.classList && sib.classList.contains("wt-mchip")) return;
-      var chip = document.createElement("span");
-      chip.className = "wt-mchip";
-      chip.textContent = "🏋️ מכשיר";
-      chip.addEventListener("click", function (e) { e.stopPropagation(); openMachinePopup(exId); });
-      if (el.parentNode) el.parentNode.insertBefore(chip, el.nextSibling);
+      if (!exId) return;
+      var sub = subsByEx[exId], machines = eqByEx[exId];
+      if (!sub && !(machines && machines.length)) return;
+      var sib = el.nextElementSibling, box = (sib && sib.classList && sib.classList.contains("wt-winject")) ? sib : null;
+      var sig = (sub ? sub.mode + ":" + (sub.label || "") : "") + "|" + (machines ? machines.length : 0);
+      if (box && box.__sig === sig) return;
+      if (!box) { box = document.createElement("div"); box.className = "wt-winject"; if (el.parentNode) el.parentNode.insertBefore(box, el.nextSibling); }
+      box.__sig = sig; box.innerHTML = "";
+      if (sub) {
+        var sb = document.createElement("div");
+        sb.className = "wt-sub-banner" + (sub.mode === "skip" ? " skip" : "");
+        sb.textContent = sub.mode === "skip" ? "⏭️ מדלג על תרגיל זה" : "🔄 במקום זה: " + sub.label;
+        box.appendChild(sb);
+      }
+      if (machines && machines.length) {
+        var chip = document.createElement("span");
+        chip.className = "wt-mchip"; chip.textContent = "🏋️ מכשיר";
+        chip.addEventListener("click", function (e) { e.stopPropagation(); openMachinePopup(exId); });
+        box.appendChild(chip);
+      }
     });
   }
 
@@ -1193,7 +1271,7 @@ react/cjs/react-jsx-runtime.production.js:
   }
   function scheduleRefresh() {
     clearTimeout(navHookT);
-    navHookT = setTimeout(function () { ensureToolsTab(); refreshActiveTab(); injectWorkoutMachineChips(); }, 40);
+    navHookT = setTimeout(function () { ensureToolsTab(); refreshActiveTab(); injectWorkoutOverlays(); }, 40);
   }
   function installNavHook() {
     var root = document.getElementById("root");
@@ -1225,13 +1303,14 @@ react/cjs/react-jsx-runtime.production.js:
       '<button class="wt-btn" id="wt-streak-btn">🔥 עקביות ורצף</button>' +
       '<button class="wt-btn" id="wt-nut-btn">🍎 תזונה היום</button>' +
       '<button class="wt-btn" id="wt-eq-btn">🏋️ מאגר מכשירים</button>' +
+      '<button class="wt-btn" id="wt-subs-btn">🔄 התאמת תוכנית</button>' +
       '<button class="wt-btn" id="wt-rest">⏱ טיימר מנוחה</button>' +
       '<button class="wt-btn" id="wt-sync-btn">☁️ סנכרון ענן</button>' +
       '<button class="wt-btn" id="wt-export">⬇ ייצוא גיבוי</button>' +
       '<button class="wt-btn" id="wt-import">⬆ שחזור גיבוי</button>' +
       '<a class="wt-btn" href="index.html" style="text-decoration:none">⌂ חזרה לכל האפליקציות</a>' +
       '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">' +
-      '<div class="wt-ver">מהדורה 25.06 · v20 (כמה תמונות)</div>';
+      '<div class="wt-ver">מהדורה 25.06 · v21 (התאמת תוכנית)</div>';
 
     /* Rest timer overlay */
     timerOv = document.createElement("div");
@@ -1351,8 +1430,18 @@ react/cjs/react-jsx-runtime.production.js:
     document.body.appendChild(timerOv);
     document.body.appendChild(recOv);
     document.body.appendChild(syncOv);
+    /* Program substitution overlay */
+    var subsOv = document.createElement("div");
+    subsOv.id = "wt-subs";
+    subsOv.className = "wt-overlay";
+    subsOv.innerHTML =
+      '<button class="wt-close" id="wt-subs-close" aria-label="סגור">✕</button>' +
+      '<h2>🔄 התאמת תוכנית</h2>' +
+      '<div class="wt-subs-body" id="wt-subs-body"></div>';
+
     document.body.appendChild(nutOv);
     document.body.appendChild(eqOv);
+    document.body.appendChild(subsOv);
     document.body.appendChild(streakOv);
 
     /* Machine popup (opened from a chip next to a workout exercise) */
@@ -1455,6 +1544,30 @@ react/cjs/react-jsx-runtime.production.js:
       nutOv.classList.add("open");
     });
     nutOv.querySelector("#wt-nut-close").addEventListener("click", function () { nutOv.classList.remove("open"); });
+
+    /* Program substitutions */
+    panel.querySelector("#wt-subs-btn").addEventListener("click", function () {
+      panel.classList.remove("open");
+      renderSubs(subsOv.querySelector("#wt-subs-body"));
+      subsOv.classList.add("open");
+    });
+    subsOv.querySelector("#wt-subs-close").addEventListener("click", function () { subsOv.classList.remove("open"); });
+    subsOv.addEventListener("click", function (e) {
+      if (e.target.id !== "wt-subs-save") return;
+      if (!sbConfigured()) return;
+      var st = subsOv.querySelector("#wt-subs-status"); st.textContent = "שומר…";
+      var ops = [];
+      EX_PROGRAM.A.concat(EX_PROGRAM.B).forEach(function (exId) {
+        var input = subsOv.querySelector('.wt-sub-input[data-ex="' + exId + '"]');
+        var skip = subsOv.querySelector('input[data-skip="' + exId + '"]');
+        var label = input ? input.value.trim() : "";
+        if (skip && skip.checked) ops.push(subsUpsert(exId, "skip", null));
+        else if (label) ops.push(subsUpsert(exId, "replace", label));
+        else if (subsByEx[exId]) ops.push(subsDelete(exId));
+      });
+      Promise.all(ops).then(function () { st.textContent = "נשמר ✓"; loadSubsCache(); })
+        .catch(function (e) { st.textContent = "שגיאה: " + e.message; });
+    });
 
     /* Equipment catalog */
     panel.querySelector("#wt-eq-btn").addEventListener("click", function () {
@@ -1565,7 +1678,7 @@ react/cjs/react-jsx-runtime.production.js:
 
     /* Close overlays with Escape */
     document.addEventListener("keydown", function (e) {
-      if (e.key === "Escape") { closeTimer(); recOv.classList.remove("open"); streakOv.classList.remove("open"); syncOv.classList.remove("open"); nutOv.classList.remove("open"); eqOv.classList.remove("open"); }
+      if (e.key === "Escape") { closeTimer(); recOv.classList.remove("open"); streakOv.classList.remove("open"); syncOv.classList.remove("open"); nutOv.classList.remove("open"); eqOv.classList.remove("open"); subsOv.classList.remove("open"); }
     });
 
     /* Auto-open the rest timer whenever a set is marked done */
@@ -1574,8 +1687,9 @@ react/cjs/react-jsx-runtime.production.js:
     /* Start cloud sync if configured */
     installCloudSync();
 
-    /* Load equipment cache (for machine chips inside the workout) */
+    /* Load equipment + program-substitution caches (for the workout overlays) */
     loadEqCache();
+    loadSubsCache();
 
     /* Keep the modern bottom-nav active tab highlighted */
     installNavHook();
