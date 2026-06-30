@@ -150,6 +150,28 @@
   .wt-prog-vitem { display: flex; gap: 11px; background: rgba(255,255,255,.7); border-radius: 12px; padding: 10px; cursor: pointer; }
   html.wt-dark .wt-prog-vitem { background: rgba(255,255,255,.06); }
   .wt-prog-vitem .wt-eq-img { width: 70px; height: 70px; }
+  /* Program runner */
+  .wt-runner-top { position: sticky; top: 0; display: flex; align-items: center; justify-content: space-between;
+    gap: 8px; width: 100%; max-width: 460px; padding: 8px 12px; box-sizing: border-box;
+    background: inherit; }
+  .wt-runner-prog { font-size: 14px; font-weight: 800; }
+  #wt-runner h2 { margin: 6px 0 10px; }
+  .wt-runner-body { width: 100%; max-width: 460px; padding: 0 14px 40px; box-sizing: border-box; display: flex; flex-direction: column; gap: 14px; }
+  .wt-run-ex { background: rgba(255,255,255,.7); border-radius: 14px; padding: 11px; }
+  html.wt-dark .wt-run-ex { background: rgba(255,255,255,.06); }
+  .wt-run-exh { display: flex; gap: 10px; cursor: pointer; margin-bottom: 8px; }
+  .wt-run-exh .wt-eq-img { width: 60px; height: 60px; }
+  .wt-run-exinfo { flex: 1; min-width: 0; }
+  .wt-run-sets { display: flex; flex-direction: column; gap: 7px; }
+  .wt-run-set { display: flex; align-items: center; gap: 8px; }
+  .wt-run-sn { width: 20px; text-align: center; font-weight: 800; color: #7C7F85; }
+  .wt-run-set input { flex: 1; box-sizing: border-box; padding: 9px 10px; border-radius: 9px;
+    border: 1px solid #CFCDC8; background: #fff; color: #2F3033; font-size: 15px; font-family: inherit; text-align: center; }
+  html.wt-dark .wt-run-set input { background: #2B2C30; border-color: #44464B; color: #E9E9EC; }
+  .wt-run-done { width: 46px; height: 40px; border: none; border-radius: 9px; background: #EDEBE7;
+    color: #9A9CA0; font-size: 18px; cursor: pointer; flex: 0 0 auto; }
+  html.wt-dark .wt-run-done { background: #34363A; }
+  .wt-run-done.on { background: #2F7A3D; color: #fff; }
   .wt-eq-set { font-size: 13px; color: #444; }
   html.wt-dark .wt-eq-set { color: #C7C9CE; }
   .wt-eq-notes { font-size: 12px; color: #8A8D92; }
@@ -1281,12 +1303,84 @@ react/cjs/react-jsx-runtime.production.js:
     }).join("");
     c.innerHTML = '<div class="wt-prog-vhead"><b>' + esc(prog.name) + '</b><div class="wt-prog-actions">' +
       '<button class="wt-chip" id="wt-prog-back">‹ חזרה</button><button class="wt-chip" id="wt-prog-edit">✏️ ערוך</button></div></div>' +
+      ((prog.items || []).length ? '<button class="wt-chip primary" id="wt-prog-start">▶️ התחל אימון</button>' : "") +
       (items || '<div class="wt-empty">תוכנית ריקה</div>');
     document.getElementById("wt-prog-back").addEventListener("click", openPrograms);
     document.getElementById("wt-prog-edit").addEventListener("click", function () { renderProgramEdit(prog); });
+    var startBtn = document.getElementById("wt-prog-start");
+    if (startBtn) startBtn.addEventListener("click", function () { document.getElementById("wt-programs").classList.remove("open"); startRunner(prog); });
     c.querySelectorAll(".wt-prog-vitem").forEach(function (v) {
       v.addEventListener("click", function () { var m = machineById(v.getAttribute("data-open")); if (m) openSingleMachine(m); });
     });
+  }
+
+  /* ---------- Program runner (track sets/weights for a custom program) ---------- */
+  var runnerState = null;
+  function loadRunner() { try { return JSON.parse(localStorage.getItem("wt-runner-active") || "null"); } catch (e) { return null; } }
+  function saveRunner() { if (runnerState) localStorage.setItem("wt-runner-active", JSON.stringify(runnerState)); else localStorage.removeItem("wt-runner-active"); }
+  function startRunner(prog) {
+    var active = loadRunner();
+    if (active && active.programId === prog.id) runnerState = active;
+    else runnerState = {
+      programId: prog.id, name: prog.name, startedAt: Date.now(),
+      exercises: (prog.items || []).map(function (it) {
+        var m = machineById(it.machine_id) || {}, n = parseInt(it.sets, 10) || 3;
+        return { machine_id: it.machine_id, name: m.name || "מכשיר", category: m.category || "", settings: m.settings || "",
+          image: imagesOf(m)[0] || "", reps: it.reps || m.reps || "",
+          sets: Array.from({ length: n }, function () { return { w: "", r: "", done: false }; }) };
+      })
+    };
+    saveRunner();
+    document.getElementById("wt-runner").classList.add("open");
+    renderRunner();
+  }
+  function renderRunner() {
+    var body = document.getElementById("wt-runner-body");
+    if (!body || !runnerState) return;
+    var total = 0, done = 0;
+    runnerState.exercises.forEach(function (ex) { ex.sets.forEach(function (s) { total++; if (s.done) done++; }); });
+    document.getElementById("wt-runner-prog").textContent = done + "/" + total + " סטים";
+    document.getElementById("wt-runner-title").textContent = "▶️ " + runnerState.name;
+    body.innerHTML = runnerState.exercises.map(function (ex, ei) {
+      var img = ex.image ? '<img class="wt-eq-img" src="' + esc(ex.image) + '" alt="">' : '<div class="wt-eq-img wt-eq-noimg">🏋️</div>';
+      var rows = ex.sets.map(function (s, si) {
+        return '<div class="wt-run-set"><span class="wt-run-sn">' + (si + 1) + '</span>' +
+          '<input class="wt-run-w" data-e="' + ei + '" data-s="' + si + '" type="number" inputmode="decimal" value="' + esc(s.w) + '" placeholder="ק״ג">' +
+          '<input class="wt-run-r" data-e="' + ei + '" data-s="' + si + '" type="number" inputmode="numeric" value="' + esc(s.r) + '" placeholder="' + esc(ex.reps || "חזרות") + '">' +
+          '<button class="wt-run-done' + (s.done ? " on" : "") + '" data-e="' + ei + '" data-s="' + si + '">✓</button></div>';
+      }).join("");
+      return '<div class="wt-run-ex"><div class="wt-run-exh" data-open="' + esc(ex.machine_id) + '">' + img +
+        '<div class="wt-run-exinfo"><div class="wt-eq-name">' + (ei + 1) + ". " + esc(ex.name) + '</div>' +
+        (ex.category ? '<div class="wt-eq-notes">' + esc(ex.category) + (ex.reps ? " · יעד " + esc(ex.reps) : "") + '</div>' : "") +
+        (ex.settings ? '<div class="wt-eq-set">⚙️ ' + esc(ex.settings) + '</div>' : "") + '</div></div>' +
+        '<div class="wt-run-sets">' + rows + '</div></div>';
+    }).join("");
+    body.querySelectorAll(".wt-run-w").forEach(function (el) { el.addEventListener("input", function () { runnerState.exercises[+el.getAttribute("data-e")].sets[+el.getAttribute("data-s")].w = el.value; saveRunner(); }); });
+    body.querySelectorAll(".wt-run-r").forEach(function (el) { el.addEventListener("input", function () { runnerState.exercises[+el.getAttribute("data-e")].sets[+el.getAttribute("data-s")].r = el.value; saveRunner(); }); });
+    body.querySelectorAll(".wt-run-done").forEach(function (el) {
+      el.addEventListener("click", function () {
+        var s = runnerState.exercises[+el.getAttribute("data-e")].sets[+el.getAttribute("data-s")];
+        s.done = !s.done; saveRunner();
+        el.classList.toggle("on", s.done);
+        var tot = 0, dn = 0; runnerState.exercises.forEach(function (ex) { ex.sets.forEach(function (x) { tot++; if (x.done) dn++; }); });
+        document.getElementById("wt-runner-prog").textContent = dn + "/" + tot + " סטים";
+        if (s.done) { timerOv.classList.add("open"); startTimer(getRestSec()); }
+      });
+    });
+    body.querySelectorAll(".wt-run-exh").forEach(function (h) { h.addEventListener("click", function () { var m = machineById(h.getAttribute("data-open")); if (m) openSingleMachine(m); }); });
+  }
+  function finishRunner() {
+    if (!runnerState) return;
+    var volume = 0, done = 0;
+    runnerState.exercises.forEach(function (ex) { ex.sets.forEach(function (s) { if (s.done) { done++; volume += (parseFloat(s.w) || 0) * (parseFloat(s.r) || 0); } }); });
+    if (sbConfigured()) {
+      var c = sbCfg();
+      fetch(cleanUrl(c.url) + "/rest/v1/program_logs", { method: "POST", headers: Object.assign(sbHeaders(), { Prefer: "return=minimal" }),
+        body: JSON.stringify({ owner: c.code, program_id: runnerState.programId, name: runnerState.name, volume: Math.round(volume), sets_done: done, data: runnerState.exercises }) }).catch(function () {});
+    }
+    runnerState = null; saveRunner();
+    document.getElementById("wt-runner").classList.remove("open");
+    showCelebration("💪 אימון הושלם!", done + " סטים · נפח " + Math.round(volume) + " ק״ג");
   }
 
   /* ---------- Rest timer (independent, full-screen) ---------- */
@@ -1505,7 +1599,7 @@ react/cjs/react-jsx-runtime.production.js:
       '<button class="wt-btn" id="wt-import">⬆ שחזור גיבוי</button>' +
       '<a class="wt-btn" href="index.html" style="text-decoration:none">⌂ חזרה לכל האפליקציות</a>' +
       '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">' +
-      '<div class="wt-ver">מהדורה 25.06 · v24 (התוכניות שלי)</div>';
+      '<div class="wt-ver">מהדורה 25.06 · v25 (הרצת תוכנית)</div>';
 
     /* Rest timer overlay */
     timerOv = document.createElement("div");
@@ -1650,10 +1744,22 @@ react/cjs/react-jsx-runtime.production.js:
       '<h2>📋 התוכניות שלי</h2>' +
       '<div class="wt-prog-body" id="wt-programs-body"></div>';
 
+    /* Program runner overlay */
+    var runnerOv = document.createElement("div");
+    runnerOv.id = "wt-runner";
+    runnerOv.className = "wt-overlay";
+    runnerOv.innerHTML =
+      '<div class="wt-runner-top"><button class="wt-chip" id="wt-runner-close">✕ סגור</button>' +
+      '<span id="wt-runner-prog" class="wt-runner-prog"></span>' +
+      '<button class="wt-chip primary" id="wt-runner-finish">סיים אימון</button></div>' +
+      '<h2 id="wt-runner-title">▶️ אימון</h2>' +
+      '<div class="wt-runner-body" id="wt-runner-body"></div>';
+
     document.body.appendChild(nutOv);
     document.body.appendChild(eqOv);
     document.body.appendChild(subsOv);
     document.body.appendChild(progOv);
+    document.body.appendChild(runnerOv);
     document.body.appendChild(streakOv);
 
     /* Machine popup (opened from a chip next to a workout exercise) */
@@ -1787,6 +1893,8 @@ react/cjs/react-jsx-runtime.production.js:
       openPrograms();
     });
     progOv.querySelector("#wt-prog-close").addEventListener("click", function () { progOv.classList.remove("open"); });
+    runnerOv.querySelector("#wt-runner-close").addEventListener("click", function () { runnerOv.classList.remove("open"); });
+    runnerOv.querySelector("#wt-runner-finish").addEventListener("click", function () { if (confirm("לסיים ולשמור את האימון?")) finishRunner(); });
 
     /* Equipment catalog */
     panel.querySelector("#wt-eq-btn").addEventListener("click", function () {
