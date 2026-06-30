@@ -125,6 +125,31 @@
     padding: 2px 8px; border-radius: 999px; }
   .wt-mpop-meta { font-size: 12.5px; color: #6F7277; font-weight: 700; margin: 2px 0 4px; }
   html.wt-dark .wt-mpop-meta { color: #A7AAB0; }
+  /* My programs */
+  .wt-prog-body { width: 100%; max-width: 460px; padding: 0 16px 32px; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; }
+  .wt-prog-card { background: rgba(255,255,255,.7); border-radius: 12px; padding: 14px; cursor: pointer;
+    display: flex; align-items: center; justify-content: space-between; }
+  html.wt-dark .wt-prog-card { background: rgba(255,255,255,.06); }
+  .wt-prog-card b { font-size: 16px; font-weight: 800; }
+  .wt-prog-card span { font-size: 12px; color: #7C7F85; }
+  .wt-prog-actions { display: flex; gap: 8px; }
+  #wt-programs .wt-chip.primary { width: 100%; padding: 12px; }
+  .wt-prog-item { background: rgba(0,0,0,.04); border-radius: 10px; padding: 9px 11px; }
+  html.wt-dark .wt-prog-item { background: rgba(255,255,255,.05); }
+  .wt-prog-it-name { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+  .wt-prog-it-ctl { display: flex; align-items: center; gap: 6px; }
+  .wt-prog-it-ctl input { width: 64px; box-sizing: border-box; padding: 7px 8px; border-radius: 8px;
+    border: 1px solid #CFCDC8; background: #fff; color: #2F3033; font-size: 13px; font-family: inherit; }
+  html.wt-dark .wt-prog-it-ctl input { background: #2B2C30; border-color: #44464B; color: #E9E9EC; }
+  .wt-prog-it-ctl .wt-prog-reps { flex: 1; width: auto; }
+  .wt-prog-mv, .wt-prog-rm { background: rgba(0,0,0,.06); border: none; border-radius: 7px; width: 30px; height: 32px;
+    cursor: pointer; font-size: 13px; color: inherit; }
+  html.wt-dark .wt-prog-mv, html.wt-dark .wt-prog-rm { background: rgba(255,255,255,.10); }
+  .wt-prog-vhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  .wt-prog-vhead b { font-size: 19px; font-weight: 800; }
+  .wt-prog-vitem { display: flex; gap: 11px; background: rgba(255,255,255,.7); border-radius: 12px; padding: 10px; cursor: pointer; }
+  html.wt-dark .wt-prog-vitem { background: rgba(255,255,255,.06); }
+  .wt-prog-vitem .wt-eq-img { width: 70px; height: 70px; }
   .wt-eq-set { font-size: 13px; color: #444; }
   html.wt-dark .wt-eq-set { color: #C7C9CE; }
   .wt-eq-notes { font-size: 12px; color: #8A8D92; }
@@ -1152,6 +1177,118 @@ react/cjs/react-jsx-runtime.production.js:
     });
   }
 
+  /* ---------- My custom programs (built from catalogued machines) ---------- */
+  var progRows = [], progEditing = null;
+  function programsList() {
+    var c = sbCfg();
+    return fetch(cleanUrl(c.url) + "/rest/v1/programs?owner=eq." + encodeURIComponent(c.code) + "&select=*&order=created_at.desc", { headers: sbHeaders() })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
+  }
+  function programsSave(prog) {
+    var c = sbCfg(), base = cleanUrl(c.url);
+    function chk(r) { if (!r.ok) return r.text().then(function (t) { throw new Error("HTTP " + r.status); }); }
+    if (prog.id) return fetch(base + "/rest/v1/programs?id=eq." + encodeURIComponent(prog.id), { method: "PATCH", headers: Object.assign(sbHeaders(), { Prefer: "return=minimal" }), body: JSON.stringify({ name: prog.name, items: prog.items }) }).then(chk);
+    return fetch(base + "/rest/v1/programs", { method: "POST", headers: Object.assign(sbHeaders(), { Prefer: "return=minimal" }), body: JSON.stringify({ owner: c.code, name: prog.name, items: prog.items }) }).then(chk);
+  }
+  function programsDelete(id) {
+    var c = sbCfg();
+    return fetch(cleanUrl(c.url) + "/rest/v1/programs?id=eq." + encodeURIComponent(id), { method: "DELETE", headers: sbHeaders() })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); });
+  }
+  function progStatus(msg) { var el = document.getElementById("wt-prog-status"); if (el) el.textContent = msg || ""; }
+  function openPrograms() {
+    var c = document.getElementById("wt-programs-body");
+    if (!c) return;
+    if (!sbConfigured()) { c.innerHTML = '<div class="wt-empty">צריך קודם להגדיר סנכרון ענן (כלים → ☁️ סנכרון ענן).</div>'; return; }
+    if (!eqAll.length) loadEqCache();
+    c.innerHTML = '<div class="wt-empty">טוען…</div>';
+    programsList().then(function (rows) {
+      progRows = rows;
+      var cards = rows.map(function (prog) {
+        return '<div class="wt-prog-card" data-id="' + esc(prog.id) + '"><b>' + esc(prog.name) + '</b><span>' + ((prog.items || []).length) + ' תרגילים</span></div>';
+      }).join("");
+      c.innerHTML = '<button class="wt-chip primary" id="wt-prog-new">➕ תוכנית חדשה</button>' + (cards || '<div class="wt-empty">אין עדיין תוכניות.<br>צור את הראשונה ➕</div>');
+      document.getElementById("wt-prog-new").addEventListener("click", function () { renderProgramEdit({ name: "", items: [] }); });
+      c.querySelectorAll(".wt-prog-card").forEach(function (card) {
+        card.addEventListener("click", function () { var prog = progRows.filter(function (x) { return String(x.id) === card.getAttribute("data-id"); })[0]; if (prog) renderProgramView(prog); });
+      });
+    }).catch(function (e) { c.innerHTML = '<div class="wt-empty">שגיאה: ' + esc(e.message) + '</div>'; });
+  }
+  function renderProgItems() {
+    var box = document.getElementById("wt-prog-items");
+    if (!box) return;
+    if (!progEditing.items.length) { box.innerHTML = '<div class="wt-empty">אין מכשירים. הוסף מהרשימה למעלה.</div>'; return; }
+    box.innerHTML = progEditing.items.map(function (it, i) {
+      var m = machineById(it.machine_id);
+      return '<div class="wt-prog-item"><div class="wt-prog-it-name">' + (i + 1) + ". " + esc(m ? m.name : "מכשיר נמחק") + '</div>' +
+        '<div class="wt-prog-it-ctl"><input class="wt-prog-sets" data-i="' + i + '" type="number" value="' + esc(it.sets || "") + '" placeholder="סטים">' +
+        '<input class="wt-prog-reps" data-i="' + i + '" value="' + esc(it.reps || "") + '" placeholder="חזרות">' +
+        '<button class="wt-prog-mv" data-i="' + i + '" data-d="-1">▲</button><button class="wt-prog-mv" data-i="' + i + '" data-d="1">▼</button>' +
+        '<button class="wt-prog-rm" data-i="' + i + '">✕</button></div></div>';
+    }).join("");
+    box.querySelectorAll(".wt-prog-sets").forEach(function (el) { el.addEventListener("input", function () { progEditing.items[+el.getAttribute("data-i")].sets = parseInt(el.value, 10) || null; }); });
+    box.querySelectorAll(".wt-prog-reps").forEach(function (el) { el.addEventListener("input", function () { progEditing.items[+el.getAttribute("data-i")].reps = el.value; }); });
+    box.querySelectorAll(".wt-prog-rm").forEach(function (el) { el.addEventListener("click", function () { progEditing.items.splice(+el.getAttribute("data-i"), 1); renderProgItems(); }); });
+    box.querySelectorAll(".wt-prog-mv").forEach(function (el) {
+      el.addEventListener("click", function () {
+        var i = +el.getAttribute("data-i"), j = i + (+el.getAttribute("data-d"));
+        if (j < 0 || j >= progEditing.items.length) return;
+        var t = progEditing.items[j]; progEditing.items[j] = progEditing.items[i]; progEditing.items[i] = t; renderProgItems();
+      });
+    });
+  }
+  function renderProgramEdit(prog) {
+    progEditing = { id: prog.id, name: prog.name || "", items: (prog.items || []).slice() };
+    var c = document.getElementById("wt-programs-body");
+    c.innerHTML =
+      '<input id="wt-prog-name" class="wt-eq-input" placeholder="שם התוכנית (למשל: יום דחיפה)" value="' + esc(progEditing.name) + '" autocomplete="off">' +
+      '<select id="wt-prog-add" class="wt-eq-input"><option value="">➕ הוסף מכשיר…</option>' + machineOptions(null) + '</select>' +
+      '<div id="wt-prog-items"></div>' +
+      '<button class="wt-chip primary" id="wt-prog-save">💾 שמור תוכנית</button>' +
+      '<div class="wt-prog-actions"><button class="wt-chip" id="wt-prog-cancel">ביטול</button>' +
+        (progEditing.id ? '<button class="wt-chip" id="wt-prog-del">🗑 מחק</button>' : '') + '</div>' +
+      '<div class="wt-sync-status" id="wt-prog-status"></div>';
+    renderProgItems();
+    document.getElementById("wt-prog-add").addEventListener("change", function () {
+      var id = this.value; this.value = "";
+      var m = machineById(id); if (!m) return;
+      progEditing.items.push({ machine_id: id, sets: m.sets || 3, reps: m.reps || "10-12" });
+      renderProgItems();
+    });
+    document.getElementById("wt-prog-name").addEventListener("input", function () { progEditing.name = this.value; });
+    document.getElementById("wt-prog-save").addEventListener("click", function () {
+      if (!progEditing.name.trim()) { progStatus("תן שם לתוכנית"); return; }
+      if (!progEditing.items.length) { progStatus("הוסף לפחות מכשיר אחד"); return; }
+      progStatus("שומר…");
+      programsSave(progEditing).then(openPrograms).catch(function (e) { progStatus("שגיאה: " + e.message); });
+    });
+    document.getElementById("wt-prog-cancel").addEventListener("click", openPrograms);
+    if (progEditing.id) document.getElementById("wt-prog-del").addEventListener("click", function () {
+      if (!confirm("למחוק את התוכנית?")) return;
+      programsDelete(progEditing.id).then(openPrograms).catch(function (e) { progStatus("שגיאה: " + e.message); });
+    });
+  }
+  function renderProgramView(prog) {
+    var c = document.getElementById("wt-programs-body");
+    var items = (prog.items || []).map(function (it, i) {
+      var m = machineById(it.machine_id);
+      if (!m) return '<div class="wt-prog-vitem"><div class="wt-eq-info"><div class="wt-eq-name">' + (i + 1) + ". מכשיר נמחק</div></div></div>";
+      var imgs = imagesOf(m), img = imgs.length ? '<img class="wt-eq-img" src="' + esc(imgs[0]) + '" alt="">' : '<div class="wt-eq-img wt-eq-noimg">🏋️</div>';
+      return '<div class="wt-prog-vitem" data-open="' + esc(m.id) + '"><div class="wt-eq-imgwrap">' + img + '</div><div class="wt-eq-info">' +
+        '<div class="wt-eq-name">' + (i + 1) + ". " + esc(m.name) + ' <span class="wt-eq-sr">' + (it.sets || m.sets || "?") + "×" + esc(it.reps || m.reps || "?") + '</span></div>' +
+        (m.category ? '<div class="wt-eq-notes">' + esc(m.category) + '</div>' : '') +
+        (m.settings ? '<div class="wt-eq-set">⚙️ ' + esc(m.settings) + '</div>' : '') + '</div></div>';
+    }).join("");
+    c.innerHTML = '<div class="wt-prog-vhead"><b>' + esc(prog.name) + '</b><div class="wt-prog-actions">' +
+      '<button class="wt-chip" id="wt-prog-back">‹ חזרה</button><button class="wt-chip" id="wt-prog-edit">✏️ ערוך</button></div></div>' +
+      (items || '<div class="wt-empty">תוכנית ריקה</div>');
+    document.getElementById("wt-prog-back").addEventListener("click", openPrograms);
+    document.getElementById("wt-prog-edit").addEventListener("click", function () { renderProgramEdit(prog); });
+    c.querySelectorAll(".wt-prog-vitem").forEach(function (v) {
+      v.addEventListener("click", function () { var m = machineById(v.getAttribute("data-open")); if (m) openSingleMachine(m); });
+    });
+  }
+
   /* ---------- Rest timer (independent, full-screen) ---------- */
   var timerOv, ringFg, timeB, timeSpan, RING_LEN, tState = null, tRAF = null, audioCtx = null, tCloseT = null;
   var panel = null; // tools panel, toggled from the bottom-nav "כלים" tab
@@ -1361,13 +1498,14 @@ react/cjs/react-jsx-runtime.production.js:
       '<button class="wt-btn" id="wt-nut-btn">🍎 תזונה היום</button>' +
       '<button class="wt-btn" id="wt-eq-btn">🏋️ מאגר מכשירים</button>' +
       '<button class="wt-btn" id="wt-subs-btn">🔄 התאמת תוכנית</button>' +
+      '<button class="wt-btn" id="wt-prog-btn">📋 התוכניות שלי</button>' +
       '<button class="wt-btn" id="wt-rest">⏱ טיימר מנוחה</button>' +
       '<button class="wt-btn" id="wt-sync-btn">☁️ סנכרון ענן</button>' +
       '<button class="wt-btn" id="wt-export">⬇ ייצוא גיבוי</button>' +
       '<button class="wt-btn" id="wt-import">⬆ שחזור גיבוי</button>' +
       '<a class="wt-btn" href="index.html" style="text-decoration:none">⌂ חזרה לכל האפליקציות</a>' +
       '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">' +
-      '<div class="wt-ver">מהדורה 25.06 · v23 (החלפה ממכשיר)</div>';
+      '<div class="wt-ver">מהדורה 25.06 · v24 (התוכניות שלי)</div>';
 
     /* Rest timer overlay */
     timerOv = document.createElement("div");
@@ -1503,9 +1641,19 @@ react/cjs/react-jsx-runtime.production.js:
       '<h2>🔄 התאמת תוכנית</h2>' +
       '<div class="wt-subs-body" id="wt-subs-body"></div>';
 
+    /* My programs overlay */
+    var progOv = document.createElement("div");
+    progOv.id = "wt-programs";
+    progOv.className = "wt-overlay";
+    progOv.innerHTML =
+      '<button class="wt-close" id="wt-prog-close" aria-label="סגור">✕</button>' +
+      '<h2>📋 התוכניות שלי</h2>' +
+      '<div class="wt-prog-body" id="wt-programs-body"></div>';
+
     document.body.appendChild(nutOv);
     document.body.appendChild(eqOv);
     document.body.appendChild(subsOv);
+    document.body.appendChild(progOv);
     document.body.appendChild(streakOv);
 
     /* Machine popup (opened from a chip next to a workout exercise) */
@@ -1632,6 +1780,14 @@ react/cjs/react-jsx-runtime.production.js:
         .catch(function (e) { st.textContent = "שגיאה: " + e.message; });
     });
 
+    /* My programs */
+    panel.querySelector("#wt-prog-btn").addEventListener("click", function () {
+      panel.classList.remove("open");
+      progOv.classList.add("open");
+      openPrograms();
+    });
+    progOv.querySelector("#wt-prog-close").addEventListener("click", function () { progOv.classList.remove("open"); });
+
     /* Equipment catalog */
     panel.querySelector("#wt-eq-btn").addEventListener("click", function () {
       panel.classList.remove("open");
@@ -1745,7 +1901,7 @@ react/cjs/react-jsx-runtime.production.js:
 
     /* Close overlays with Escape */
     document.addEventListener("keydown", function (e) {
-      if (e.key === "Escape") { closeTimer(); recOv.classList.remove("open"); streakOv.classList.remove("open"); syncOv.classList.remove("open"); nutOv.classList.remove("open"); eqOv.classList.remove("open"); subsOv.classList.remove("open"); }
+      if (e.key === "Escape") { closeTimer(); recOv.classList.remove("open"); streakOv.classList.remove("open"); syncOv.classList.remove("open"); nutOv.classList.remove("open"); eqOv.classList.remove("open"); subsOv.classList.remove("open"); progOv.classList.remove("open"); }
     });
 
     /* Auto-open the rest timer whenever a set is marked done */
