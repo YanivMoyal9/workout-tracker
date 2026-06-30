@@ -132,6 +132,12 @@
   html.wt-dark .wt-prog-card { background: rgba(255,255,255,.06); }
   .wt-prog-card b { font-size: 16px; font-weight: 800; }
   .wt-prog-card span { font-size: 12px; color: #7C7F85; }
+  .wt-prog-card.wt-prog-builtin { flex-direction: column; align-items: flex-end; gap: 4px;
+    border: 1.5px solid rgba(47,48,51,.12); background: rgba(255,255,255,.85); }
+  html.wt-dark .wt-prog-card.wt-prog-builtin { border-color: rgba(255,255,255,.12); background: rgba(255,255,255,.08); }
+  .wt-prog-sec { font-size: 12px; font-weight: 800; color: #8A8D93; letter-spacing: .03em;
+    margin: 14px 2px 2px; }
+  .wt-prog-sec:first-child { margin-top: 2px; }
   .wt-prog-actions { display: flex; gap: 8px; }
   #wt-programs .wt-chip.primary { width: 100%; padding: 12px; }
   .wt-prog-item { background: rgba(0,0,0,.04); border-radius: 10px; padding: 9px 11px; }
@@ -1123,22 +1129,12 @@ react/cjs/react-jsx-runtime.production.js:
     A: ["bench", "latpd", "ohp", "row", "fly", "facepull", "latraise", "triceps", "curl", "hammer"],
     B: ["squat", "rdl", "legpress", "hamcurl", "calf", "plank", "crunch", "legraise"]
   };
-  var EX_CAT = {
-    bench: "חזה", fly: "חזה", latpd: "גב", row: "גב", ohp: "כתפיים", facepull: "כתפיים",
-    latraise: "כתפיים", triceps: "יד אחורית", curl: "יד קדמית", hammer: "יד קדמית",
-    squat: "רגליים", rdl: "רגליים", legpress: "רגליים", hamcurl: "רגליים", calf: "רגליים",
-    plank: "ליבה", crunch: "ליבה", legraise: "ליבה"
-  };
-  // Built-in A/B as importable, editable program seeds for "My Programs".
+  // Built-in A/B. Shown in "My Programs" as linked cards that open the
+  // substitution editor (swap/skip → reflected on the real colored workout).
   var BUILTIN_PROGRAMS = [
     { key: "A", name: "אימון A · עליון" },
     { key: "B", name: "אימון B · תחתון" }
   ];
-  function builtinSeed(key) {
-    return EX_PROGRAM[key].map(function (exId) {
-      return { name: EX_FULL[exId] || EX_NAMES[exId] || exId, category: EX_CAT[exId] || "", sets: 3, reps: "8-12" };
-    });
-  }
   var subsByEx = {};
   function loadSubsCache() {
     try { subsByEx = JSON.parse(localStorage.getItem("wt-subs-cache") || "{}"); } catch (e) { subsByEx = {}; }
@@ -1178,11 +1174,11 @@ react/cjs/react-jsx-runtime.production.js:
       }).join("") + '</optgroup>';
     }).join("");
   }
-  function renderSubs(container) {
+  function renderSubs(container, onlyDay) {
     if (!sbConfigured()) { container.innerHTML = '<div class="wt-empty">צריך קודם להגדיר סנכרון ענן (כלים → ☁️ סנכרון ענן).</div>'; return; }
     if (!eqAll.length) { container.innerHTML = '<div class="wt-empty">אין עדיין מכשירים בקטלוג.<br>קודם הוסף מכשירים ב-כלים → 🏋️ מאגר מכשירים.</div>'; loadEqCache(); return; }
-    var html = '<div class="wt-subs-help">לכל תרגיל בחר מכשיר מהקטלוג שלך לעשות במקום, או "מדלג". זה יוצג באימון ליד התרגיל.</div>';
-    ["A", "B"].forEach(function (day) {
+    var html = '<div class="wt-subs-help">🔵 השינויים כאן יופיעו <b>באימון האמיתי שלך</b> (A/B הצבעוני). לכל תרגיל בחר מכשיר מהקטלוג לעשות במקומו, או "מדלג".</div>';
+    (onlyDay ? [onlyDay] : ["A", "B"]).forEach(function (day) {
       html += '<h4 class="wt-subs-day">' + (day === "A" ? "אימון A · עליון" : "אימון B · תחתון") + '</h4>';
       EX_PROGRAM[day].forEach(function (exId) {
         var s = subsByEx[exId] || {};
@@ -1261,27 +1257,34 @@ react/cjs/react-jsx-runtime.production.js:
     if (!eqAll.length) loadEqCache();
     c.innerHTML = '<div class="wt-empty">טוען…</div>';
     programsList().then(function (rows) {
-      progRows = rows;
-      var existingNames = rows.map(function (p) { return p.name; });
-      var missingAB = BUILTIN_PROGRAMS.filter(function (b) { return existingNames.indexOf(b.name) === -1; });
-      var cards = rows.map(function (prog) {
+      var builtinNames = BUILTIN_PROGRAMS.map(function (b) { return b.name; });
+      // Hide the old disconnected A/B copies — A/B are now edited via the linked substitution editor.
+      progRows = rows.filter(function (p) { return builtinNames.indexOf(p.name) === -1; });
+      var builtinCards = BUILTIN_PROGRAMS.map(function (b) {
+        return '<div class="wt-prog-card wt-prog-builtin" data-day="' + b.key + '"><b>' + esc(b.name) + '</b>' +
+          '<span>🔵 התאם — יופיע באימון האמיתי · ' + EX_PROGRAM[b.key].length + ' תרגילים</span></div>';
+      }).join("");
+      var cards = progRows.map(function (prog) {
         return '<div class="wt-prog-card" data-id="' + esc(prog.id) + '"><b>' + esc(prog.name) + '</b><span>' + ((prog.items || []).length) + ' תרגילים</span></div>';
       }).join("");
-      var importBtn = missingAB.length
-        ? '<button class="wt-chip" id="wt-prog-import">📥 ייבא את ' + missingAB.map(function (b) { return b.key; }).join(" ו-") + ' לעריכה</button>'
-        : "";
-      c.innerHTML = '<button class="wt-chip primary" id="wt-prog-ai">✨ צור תוכנית חכמה (AI)</button>' +
-        '<button class="wt-chip" id="wt-prog-new">➕ תוכנית ידנית</button>' + importBtn +
-        (cards || '<div class="wt-empty">אין עדיין תוכניות.<br>נסה "צור תוכנית חכמה" ✨<br>או ייבא את A ו-B לעריכה 📥</div>');
+      c.innerHTML =
+        '<div class="wt-prog-sec">האימונים שלך (A/B)</div>' + builtinCards +
+        '<div class="wt-prog-sec">תוכניות מותאמות אישית</div>' +
+        '<button class="wt-chip primary" id="wt-prog-ai">✨ צור תוכנית חכמה (AI)</button>' +
+        '<button class="wt-chip" id="wt-prog-new">➕ תוכנית ידנית</button>' +
+        (cards || '<div class="wt-empty">אין עדיין תוכניות מותאמות.<br>נסה "צור תוכנית חכמה" ✨</div>');
       document.getElementById("wt-prog-ai").addEventListener("click", function () { wizState = {}; renderWizard(); });
       document.getElementById("wt-prog-new").addEventListener("click", function () { renderProgramEdit({ name: "", items: [] }); });
-      var imp = document.getElementById("wt-prog-import");
-      if (imp) imp.addEventListener("click", function () {
-        imp.disabled = true; imp.textContent = "מייבא…";
-        Promise.all(missingAB.map(function (b) { return programsSave({ name: b.name, items: builtinSeed(b.key) }); }))
-          .then(openPrograms).catch(function (e) { imp.disabled = false; imp.textContent = "שגיאה: " + e.message; });
+      c.querySelectorAll(".wt-prog-builtin").forEach(function (card) {
+        card.addEventListener("click", function () {
+          var day = card.getAttribute("data-day");
+          document.getElementById("wt-programs").classList.remove("open");
+          var subsOv = document.getElementById("wt-subs");
+          renderSubs(subsOv.querySelector("#wt-subs-body"), day);
+          subsOv.classList.add("open");
+        });
       });
-      c.querySelectorAll(".wt-prog-card").forEach(function (card) {
+      c.querySelectorAll(".wt-prog-card:not(.wt-prog-builtin)").forEach(function (card) {
         card.addEventListener("click", function () { var prog = progRows.filter(function (x) { return String(x.id) === card.getAttribute("data-id"); })[0]; if (prog) renderProgramView(prog); });
       });
     }).catch(function (e) {
@@ -1734,7 +1737,7 @@ react/cjs/react-jsx-runtime.production.js:
       '<button class="wt-btn" id="wt-import">⬆ שחזור גיבוי</button>' +
       '<a class="wt-btn" href="index.html" style="text-decoration:none">⌂ חזרה לכל האפליקציות</a>' +
       '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">' +
-      '<div class="wt-ver">מהדורה 25.06 · v26 (מאמן AI חכם)</div>';
+      '<div class="wt-ver">מהדורה 25.06 · v27 (A/B מחובר)</div>';
 
     /* Rest timer overlay */
     timerOv = document.createElement("div");
@@ -2012,7 +2015,8 @@ react/cjs/react-jsx-runtime.production.js:
       var ops = [];
       EX_PROGRAM.A.concat(EX_PROGRAM.B).forEach(function (exId) {
         var sel = subsOv.querySelector('.wt-sub-sel[data-ex="' + exId + '"]');
-        var val = sel ? sel.value : "";
+        if (!sel) return; // day not currently rendered — don't touch its subs
+        var val = sel.value;
         if (val === "__skip__") ops.push(subsUpsert(exId, "skip", null, null));
         else if (val) { var m = machineById(val); ops.push(subsUpsert(exId, "replace", m ? m.name : null, val)); }
         else if (subsByEx[exId]) ops.push(subsDelete(exId));
