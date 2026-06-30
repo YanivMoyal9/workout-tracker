@@ -172,6 +172,26 @@
     color: #9A9CA0; font-size: 18px; cursor: pointer; flex: 0 0 auto; }
   html.wt-dark .wt-run-done { background: #34363A; }
   .wt-run-done.on { background: #2F7A3D; color: #fff; }
+  /* Smart program wizard */
+  .wt-wiz-help { font-size: 13.5px; color: #6F7277; margin: 4px 0 10px; line-height: 1.5; }
+  html.wt-dark .wt-wiz-help { color: #A7AAB0; }
+  .wt-wiz-q { font-size: 14px; font-weight: 800; margin: 14px 0 7px; }
+  .wt-wiz-opts { display: flex; flex-wrap: wrap; gap: 8px; }
+  .wt-wiz-opt { padding: 9px 14px; border-radius: 999px; border: 1.5px solid #D4D2CD; background: #fff;
+    color: #2F3033; font-size: 13.5px; font-family: inherit; cursor: pointer; }
+  html.wt-dark .wt-wiz-opt { background: #2B2C30; border-color: #44464B; color: #E9E9EC; }
+  .wt-wiz-opt.on { background: #2F7A3D; border-color: #2F7A3D; color: #fff; font-weight: 700; }
+  #wt-programs .wt-chip.primary#wt-wiz-gen { width: 100%; padding: 13px; margin-top: 18px; }
+  #wt-wiz-cancel { width: 100%; margin-top: 8px; }
+  /* Generating animation */
+  #wt-genanim { position: fixed; inset: 0; z-index: 100003; display: none; align-items: center; justify-content: center;
+    background: rgba(20,19,15,.78); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); direction: rtl; }
+  #wt-genanim.open { display: flex; }
+  .wt-gen-card { text-align: center; color: #fff; padding: 30px; }
+  .wt-gen-spin { width: 64px; height: 64px; margin: 0 auto 20px; border-radius: 50%;
+    border: 5px solid rgba(255,255,255,.18); border-top-color: #6AA84F; animation: wt-spin 1s linear infinite; }
+  @keyframes wt-spin { to { transform: rotate(360deg); } }
+  .wt-gen-msg { font-size: 17px; font-weight: 700; font-family: system-ui, sans-serif; min-height: 22px; }
   .wt-eq-set { font-size: 13px; color: #444; }
   html.wt-dark .wt-eq-set { color: #C7C9CE; }
   .wt-eq-notes { font-size: 12px; color: #8A8D92; }
@@ -1229,7 +1249,10 @@ react/cjs/react-jsx-runtime.production.js:
       var cards = rows.map(function (prog) {
         return '<div class="wt-prog-card" data-id="' + esc(prog.id) + '"><b>' + esc(prog.name) + '</b><span>' + ((prog.items || []).length) + ' תרגילים</span></div>';
       }).join("");
-      c.innerHTML = '<button class="wt-chip primary" id="wt-prog-new">➕ תוכנית חדשה</button>' + (cards || '<div class="wt-empty">אין עדיין תוכניות.<br>צור את הראשונה ➕</div>');
+      c.innerHTML = '<button class="wt-chip primary" id="wt-prog-ai">✨ צור תוכנית חכמה (AI)</button>' +
+        '<button class="wt-chip" id="wt-prog-new">➕ תוכנית ידנית</button>' +
+        (cards || '<div class="wt-empty">אין עדיין תוכניות.<br>נסה "צור תוכנית חכמה" ✨</div>');
+      document.getElementById("wt-prog-ai").addEventListener("click", function () { wizState = {}; renderWizard(); });
       document.getElementById("wt-prog-new").addEventListener("click", function () { renderProgramEdit({ name: "", items: [] }); });
       c.querySelectorAll(".wt-prog-card").forEach(function (card) {
         card.addEventListener("click", function () { var prog = progRows.filter(function (x) { return String(x.id) === card.getAttribute("data-id"); })[0]; if (prog) renderProgramView(prog); });
@@ -1242,7 +1265,8 @@ react/cjs/react-jsx-runtime.production.js:
     if (!progEditing.items.length) { box.innerHTML = '<div class="wt-empty">אין מכשירים. הוסף מהרשימה למעלה.</div>'; return; }
     box.innerHTML = progEditing.items.map(function (it, i) {
       var m = machineById(it.machine_id);
-      return '<div class="wt-prog-item"><div class="wt-prog-it-name">' + (i + 1) + ". " + esc(m ? m.name : "מכשיר נמחק") + '</div>' +
+      var nm = it.name || (m && m.name) || "תרגיל";
+      return '<div class="wt-prog-item"><div class="wt-prog-it-name">' + (i + 1) + ". " + esc(nm) + (it.machine_id ? "" : " 💡") + '</div>' +
         '<div class="wt-prog-it-ctl"><input class="wt-prog-sets" data-i="' + i + '" type="number" value="' + esc(it.sets || "") + '" placeholder="סטים">' +
         '<input class="wt-prog-reps" data-i="' + i + '" value="' + esc(it.reps || "") + '" placeholder="חזרות">' +
         '<button class="wt-prog-mv" data-i="' + i + '" data-d="-1">▲</button><button class="wt-prog-mv" data-i="' + i + '" data-d="1">▼</button>' +
@@ -1274,7 +1298,7 @@ react/cjs/react-jsx-runtime.production.js:
     document.getElementById("wt-prog-add").addEventListener("change", function () {
       var id = this.value; this.value = "";
       var m = machineById(id); if (!m) return;
-      progEditing.items.push({ machine_id: id, sets: m.sets || 3, reps: m.reps || "10-12" });
+      progEditing.items.push({ machine_id: id, name: m.name, category: m.category, sets: m.sets || 3, reps: m.reps || "10-12" });
       renderProgItems();
     });
     document.getElementById("wt-prog-name").addEventListener("input", function () { progEditing.name = this.value; });
@@ -1294,12 +1318,14 @@ react/cjs/react-jsx-runtime.production.js:
     var c = document.getElementById("wt-programs-body");
     var items = (prog.items || []).map(function (it, i) {
       var m = machineById(it.machine_id);
-      if (!m) return '<div class="wt-prog-vitem"><div class="wt-eq-info"><div class="wt-eq-name">' + (i + 1) + ". מכשיר נמחק</div></div></div>";
-      var imgs = imagesOf(m), img = imgs.length ? '<img class="wt-eq-img" src="' + esc(imgs[0]) + '" alt="">' : '<div class="wt-eq-img wt-eq-noimg">🏋️</div>';
-      return '<div class="wt-prog-vitem" data-open="' + esc(m.id) + '"><div class="wt-eq-imgwrap">' + img + '</div><div class="wt-eq-info">' +
-        '<div class="wt-eq-name">' + (i + 1) + ". " + esc(m.name) + ' <span class="wt-eq-sr">' + (it.sets || m.sets || "?") + "×" + esc(it.reps || m.reps || "?") + '</span></div>' +
-        (m.category ? '<div class="wt-eq-notes">' + esc(m.category) + '</div>' : '') +
-        (m.settings ? '<div class="wt-eq-set">⚙️ ' + esc(m.settings) + '</div>' : '') + '</div></div>';
+      var nm = it.name || (m && m.name) || "תרגיל", cat = it.category || (m && m.category) || "";
+      var imgs = m ? imagesOf(m) : [];
+      var img = imgs.length ? '<img class="wt-eq-img" src="' + esc(imgs[0]) + '" alt="">' : '<div class="wt-eq-img wt-eq-noimg">' + (m ? "🏋️" : "💡") + '</div>';
+      return '<div class="wt-prog-vitem"' + (m ? ' data-open="' + esc(m.id) + '"' : "") + '><div class="wt-eq-imgwrap">' + img + '</div><div class="wt-eq-info">' +
+        '<div class="wt-eq-name">' + (i + 1) + ". " + esc(nm) + ' <span class="wt-eq-sr">' + (it.sets || (m && m.sets) || "?") + "×" + esc(it.reps || (m && m.reps) || "?") + '</span></div>' +
+        (cat ? '<div class="wt-eq-notes">' + esc(cat) + (it.machine_id ? "" : " · הצעת AI") + '</div>' : '') +
+        (m && m.settings ? '<div class="wt-eq-set">⚙️ ' + esc(m.settings) + '</div>' : '') +
+        (it.how && !m ? '<div class="wt-eq-notes">' + esc(it.how) + '</div>' : '') + '</div></div>';
     }).join("");
     c.innerHTML = '<div class="wt-prog-vhead"><b>' + esc(prog.name) + '</b><div class="wt-prog-actions">' +
       '<button class="wt-chip" id="wt-prog-back">‹ חזרה</button><button class="wt-chip" id="wt-prog-edit">✏️ ערוך</button></div></div>' +
@@ -1314,6 +1340,82 @@ react/cjs/react-jsx-runtime.production.js:
     });
   }
 
+  /* ---------- Smart program generator (trainer questionnaire + AI) ---------- */
+  var WIZ = {
+    goal: { q: "מה המטרה הראשית?", opts: ["מסה ובניית שריר", "כוח", "חיטוב ושריפת שומן", "סיבולת", "בריאות כללי"] },
+    level: { q: "רמת ניסיון", opts: ["מתחיל", "בינוני", "מתקדם"] },
+    type: { q: "סוג האימון", opts: ["גוף מלא", "עליון", "תחתון", "דחיפה", "משיכה", "רגליים"] },
+    time: { q: "משך האימון", opts: ["30 דק׳", "45 דק׳", "60 דק׳", "75 דק׳"] },
+    equip: { q: "ציוד", opts: ["להעדיף את המכשירים שלי", "כל ציוד בחדר כושר"] }
+  };
+  var wizState = {}, genTimer = null;
+  function renderWizard() {
+    var c = document.getElementById("wt-programs-body");
+    var html = '<div class="wt-wiz-help">ענה על כמה שאלות, והמאמן החכם יבנה לך תוכנית מקצועית 🤖</div>';
+    Object.keys(WIZ).forEach(function (k) {
+      var w = WIZ[k];
+      html += '<div class="wt-wiz-q">' + w.q + '</div><div class="wt-wiz-opts" data-k="' + k + '">' +
+        w.opts.map(function (o) { return '<button type="button" class="wt-wiz-opt' + (wizState[k] === o ? " on" : "") + '" data-v="' + esc(o) + '">' + esc(o) + '</button>'; }).join("") + '</div>';
+    });
+    html += '<div class="wt-wiz-q">דגש על שרירים (אופציונלי)</div><div class="wt-wiz-opts wt-wiz-multi" data-k="focus">' +
+      EQ_CATEGORIES.filter(function (x) { return x !== "אחר" && x !== "אירובי"; }).map(function (o) { return '<button type="button" class="wt-wiz-opt' + ((wizState.focus || []).indexOf(o) > -1 ? " on" : "") + '" data-v="' + esc(o) + '">' + esc(o) + '</button>'; }).join("") + '</div>';
+    html += '<button class="wt-chip primary" id="wt-wiz-gen">✨ צור תוכנית</button>' +
+      '<button class="wt-chip" id="wt-wiz-cancel">ביטול</button><div class="wt-sync-status" id="wt-wiz-status"></div>';
+    c.innerHTML = html;
+    c.querySelectorAll(".wt-wiz-opts:not(.wt-wiz-multi)").forEach(function (grp) {
+      grp.querySelectorAll(".wt-wiz-opt").forEach(function (btn) {
+        btn.addEventListener("click", function () { wizState[grp.getAttribute("data-k")] = btn.getAttribute("data-v"); grp.querySelectorAll(".wt-wiz-opt").forEach(function (b) { b.classList.toggle("on", b === btn); }); });
+      });
+    });
+    c.querySelector(".wt-wiz-multi").querySelectorAll(".wt-wiz-opt").forEach(function (btn) {
+      btn.addEventListener("click", function () { wizState.focus = wizState.focus || []; var v = btn.getAttribute("data-v"), i = wizState.focus.indexOf(v); if (i > -1) wizState.focus.splice(i, 1); else wizState.focus.push(v); btn.classList.toggle("on"); });
+    });
+    document.getElementById("wt-wiz-cancel").addEventListener("click", openPrograms);
+    document.getElementById("wt-wiz-gen").addEventListener("click", generateProgram);
+  }
+  function showGenAnim() {
+    var el = document.getElementById("wt-genanim");
+    if (!el) {
+      el = document.createElement("div"); el.id = "wt-genanim";
+      el.innerHTML = '<div class="wt-gen-card"><div class="wt-gen-spin"></div><div class="wt-gen-msg" id="wt-gen-msg">בונה את התוכנית…</div></div>';
+      document.body.appendChild(el);
+    }
+    el.classList.add("open");
+    var msgs = ["מנתח את המטרה שלך…", "בוחר תרגילים מתאימים…", "משלב את המכשירים שלך…", "מתאים סטים וחזרות…", "מסדר בסדר אופטימלי…"];
+    var i = 0, m = document.getElementById("wt-gen-msg");
+    clearInterval(genTimer); genTimer = setInterval(function () { i = (i + 1) % msgs.length; if (m) m.textContent = msgs[i]; }, 1400);
+  }
+  function hideGenAnim() { var el = document.getElementById("wt-genanim"); if (el) el.classList.remove("open"); clearInterval(genTimer); }
+  function generateProgram() {
+    var cfg = aiCfg();
+    var st = document.getElementById("wt-wiz-status");
+    if (!cfg || !cfg.url || !cfg.key) { if (st) st.textContent = "צריך קודם להגדיר AI (כלים → ☁️ סנכרון ענן → הגדרות AI)"; return; }
+    if (!wizState.goal || !wizState.type) { if (st) st.textContent = "בחר לפחות מטרה וסוג אימון"; return; }
+    showGenAnim();
+    var machinesForAI = eqAll.map(function (m) { return { id: m.id, name: m.name, category: m.category }; });
+    var prompt = "אתה מאמן כושר מקצועי ומנוסה. בנה תוכנית אימון אחת (יום אימון) לפי הפרמטרים:\n" +
+      "מטרה: " + wizState.goal + "\nרמה: " + (wizState.level || "בינוני") + "\nסוג: " + wizState.type + "\nמשך: " + (wizState.time || "45 דק׳") + "\nציוד: " + (wizState.equip || "כל ציוד") + "\n" +
+      (wizState.focus && wizState.focus.length ? "דגש על: " + wizState.focus.join(", ") + "\n" : "") +
+      "המכשירים שהמשתמש צילם וקיטלג (העדף אותם כשמתאים, והשתמש ב-id המדויק שלהם): " + JSON.stringify(machinesForAI) + "\n" +
+      'החזר JSON תקין בלבד, בלי טקסט נוסף: {"name":"שם קצר לתוכנית","items":[{"name":"שם התרגיל בעברית","category":"קבוצת שריר","sets":4,"reps":"8-12","machine_id":"id אם תואם מכשיר מהרשימה, אחרת null","how":"טיפ ביצוע קצר"}]}. כלול 5-8 תרגילים בסדר הגיוני (מורכבים קודם), עם סטים/חזרות שמתאימים למטרה ולרמה.';
+    var base = cleanUrl(cfg.url), model = cfg.model || "claude-opus-4-8", req;
+    if (cfg.format === "openai") req = { url: base + "/v1/chat/completions", headers: { Authorization: "Bearer " + cfg.key, "content-type": "application/json" }, body: JSON.stringify({ model: model, max_tokens: 1500, messages: [{ role: "user", content: prompt }] }) };
+    else req = { url: base + "/v1/messages", headers: { "x-api-key": cfg.key, "anthropic-version": "2023-06-01", "content-type": "application/json" }, body: JSON.stringify({ model: model, max_tokens: 1500, messages: [{ role: "user", content: prompt }] }) };
+    fetch(req.url, { method: "POST", headers: req.headers, body: req.body })
+      .then(function (r) { return r.text().then(function (t) { if (!r.ok) throw new Error("(" + r.status + ") " + t.slice(0, 160)); return t; }); })
+      .then(function (t) {
+        var data; try { data = JSON.parse(t); } catch (e) { data = null; }
+        var content = "";
+        if (data && data.content && data.content[0]) content = data.content.map(function (x) { return x.text || ""; }).join("");
+        else if (data && data.choices && data.choices[0]) content = data.choices[0].message.content || "";
+        else content = t;
+        var obj = null; try { var mm = content.match(/\{[\s\S]*\}/); obj = JSON.parse(mm ? mm[0] : content); } catch (e) { obj = null; }
+        hideGenAnim();
+        if (obj && obj.items && obj.items.length) renderProgramEdit({ name: obj.name || "תוכנית חכמה", items: obj.items });
+        else { openPrograms(); alert("לא הצלחתי לפענח את תשובת ה-AI. נסה שוב."); }
+      }).catch(function (e) { hideGenAnim(); var s = document.getElementById("wt-wiz-status"); if (s) s.textContent = "שגיאת AI: " + e.message; else alert("שגיאת AI: " + e.message); });
+  }
+
   /* ---------- Program runner (track sets/weights for a custom program) ---------- */
   var runnerState = null;
   function loadRunner() { try { return JSON.parse(localStorage.getItem("wt-runner-active") || "null"); } catch (e) { return null; } }
@@ -1325,7 +1427,7 @@ react/cjs/react-jsx-runtime.production.js:
       programId: prog.id, name: prog.name, startedAt: Date.now(),
       exercises: (prog.items || []).map(function (it) {
         var m = machineById(it.machine_id) || {}, n = parseInt(it.sets, 10) || 3;
-        return { machine_id: it.machine_id, name: m.name || "מכשיר", category: m.category || "", settings: m.settings || "",
+        return { machine_id: it.machine_id, name: it.name || m.name || "תרגיל", category: it.category || m.category || "", settings: m.settings || "",
           image: imagesOf(m)[0] || "", reps: it.reps || m.reps || "",
           sets: Array.from({ length: n }, function () { return { w: "", r: "", done: false }; }) };
       })
@@ -1599,7 +1701,7 @@ react/cjs/react-jsx-runtime.production.js:
       '<button class="wt-btn" id="wt-import">⬆ שחזור גיבוי</button>' +
       '<a class="wt-btn" href="index.html" style="text-decoration:none">⌂ חזרה לכל האפליקציות</a>' +
       '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">' +
-      '<div class="wt-ver">מהדורה 25.06 · v25 (הרצת תוכנית)</div>';
+      '<div class="wt-ver">מהדורה 25.06 · v26 (מאמן AI חכם)</div>';
 
     /* Rest timer overlay */
     timerOv = document.createElement("div");
