@@ -117,6 +117,14 @@
   .wt-eq-name { font-size: 15px; font-weight: 800; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
   .wt-eq-tag { font-size: 11px; font-weight: 700; color: #2F7A3D; background: rgba(47,122,61,.12);
     padding: 2px 8px; border-radius: 999px; }
+  .wt-eq-srrow { display: flex; gap: 8px; }
+  .wt-eq-srrow .wt-eq-input { flex: 1; }
+  .wt-eq-cat-h { font-size: 13px; font-weight: 800; color: #6F7277; margin: 14px 2px 4px; }
+  html.wt-dark .wt-eq-cat-h { color: #A7AAB0; }
+  .wt-eq-sr { font-size: 11px; font-weight: 700; color: #3B6FD4; background: rgba(59,111,212,.12);
+    padding: 2px 8px; border-radius: 999px; }
+  .wt-mpop-meta { font-size: 12.5px; color: #6F7277; font-weight: 700; margin: 2px 0 4px; }
+  html.wt-dark .wt-mpop-meta { color: #A7AAB0; }
   .wt-eq-set { font-size: 13px; color: #444; }
   html.wt-dark .wt-eq-set { color: #C7C9CE; }
   .wt-eq-notes { font-size: 12px; color: #8A8D92; }
@@ -815,6 +823,7 @@ react/cjs/react-jsx-runtime.production.js:
   var EQ_BUCKET = "equipment";
   var eqPendingBlobs = []; // multiple photos staged before save
   var eqRows = []; // last-rendered catalog rows (for opening a machine by id)
+  var EQ_CATEGORIES = ["חזה", "גב", "כתפיים", "יד קדמית", "יד אחורית", "רגליים", "ישבן", "ליבה", "אירובי", "אחר"];
   function imagesOf(m) { // all image URLs of a machine (back-compat with single image_url)
     var arr = (m && Array.isArray(m.images) && m.images.length) ? m.images : (m && m.image_url ? [m.image_url] : []);
     return arr.filter(function (u) { return /^https?:\/\//.test(u); });
@@ -869,16 +878,22 @@ react/cjs/react-jsx-runtime.production.js:
     eqList().then(function (rows) {
       if (!rows.length) { list.innerHTML = '<div class="wt-empty">אין עדיין מכשירים.<br>הוסף את הראשון למעלה 📷</div>'; return; }
       eqRows = rows;
-      list.innerHTML = rows.map(function (m) {
+      function cardHtml(m) {
         var imgs = imagesOf(m);
         var img = imgs.length ? '<img class="wt-eq-img" src="' + esc(imgs[0]) + '" alt="" loading="lazy">' : '<div class="wt-eq-img wt-eq-noimg">🏋️</div>';
         var badge = imgs.length > 1 ? '<span class="wt-eq-count">📷 ' + imgs.length + '</span>' : '';
-        var exName = m.ex_id && EX_NAMES[m.ex_id] ? '<span class="wt-eq-tag">' + esc(EX_NAMES[m.ex_id]) + '</span>' : '';
+        var sr = (m.sets || m.reps) ? '<span class="wt-eq-sr">' + (m.sets || "?") + "×" + esc(m.reps || "?") + '</span>' : '';
         return '<div class="wt-eq-card" data-open="' + esc(m.id) + '"><div class="wt-eq-imgwrap">' + img + badge + '</div>' +
-          '<div class="wt-eq-info"><div class="wt-eq-name">' + esc(m.name) + exName + '</div>' +
+          '<div class="wt-eq-info"><div class="wt-eq-name">' + esc(m.name) + sr + '</div>' +
           (m.settings ? '<div class="wt-eq-set">⚙️ ' + esc(m.settings) + '</div>' : '') +
           (m.notes ? '<div class="wt-eq-notes">' + esc(m.notes) + '</div>' : '') + '</div>' +
           '<button class="wt-eq-del" data-id="' + esc(m.id) + '" aria-label="מחק">🗑</button></div>';
+      }
+      var groups = {};
+      rows.forEach(function (m) { var c = m.category || "ללא קטגוריה"; (groups[c] = groups[c] || []).push(m); });
+      var order = EQ_CATEGORIES.concat(["ללא קטגוריה"]);
+      list.innerHTML = order.filter(function (c) { return groups[c]; }).map(function (c) {
+        return '<div class="wt-eq-cat-h">' + esc(c) + ' · ' + groups[c].length + '</div>' + groups[c].map(cardHtml).join("");
       }).join("");
       list.querySelectorAll(".wt-eq-del").forEach(function (btn) {
         btn.addEventListener("click", function (e) {
@@ -909,7 +924,8 @@ react/cjs/react-jsx-runtime.production.js:
     if (!cfg || !cfg.url || !cfg.key) { eqStatus("הגדר קודם AI: כלים → ☁️ סנכרון ענן → הגדרות AI"); return; }
     if (!eqPendingBlobs.length) { eqStatus("קודם צלם/בחר תמונה"); return; }
     eqStatus("🤖 מנתח את המכשיר…");
-    var prompt = "זהה את מכשיר הכושר בתמונה. ענה בעברית בלבד בפורמט הבא: שורה ראשונה — שם המכשיר הקצר (2-4 מילים) ותו לא. אחר כך שורה ריקה, ואז: אילו שרירים הוא מפעיל ואיך משתמשים בו נכון (2-3 משפטים).";
+    var prompt = "נתח את מכשיר הכושר בתמונה. החזר JSON תקין בלבד, בלי טקסט נוסף ובלי סימוני קוד, במבנה: " +
+      '{"name":"שם קצר בעברית","category":"<אחת מ: ' + EQ_CATEGORIES.filter(function (c) { return c !== "אחר"; }).join("|") + '>","how":"איך להשתמש נכון, 2-3 משפטים בעברית","sets":3,"reps":"8-12"}';
     blobToB64(eqPendingBlobs[0]).then(function (b64) {
       var base = cleanUrl(cfg.url), model = cfg.model || "claude-opus-4-8", req;
       if (cfg.format === "openai") {
@@ -935,11 +951,23 @@ react/cjs/react-jsx-runtime.production.js:
       else if (data && data.choices && data.choices[0]) text = data.choices[0].message.content || "";
       else text = t;
       text = (text || "").trim();
-      var firstName = (text.split("\n")[0] || "").replace(/^[*#\-\s]+/, "").trim();
-      var nameEl = document.getElementById("wt-eq-name"), notesEl = document.getElementById("wt-eq-notes");
-      if (nameEl && !nameEl.value.trim() && firstName) nameEl.value = firstName;
-      if (notesEl) notesEl.value = text;
-      eqStatus("נותח ✓ — בדוק וערוך לפי הצורך");
+      var obj = null;
+      try { var mm = text.match(/\{[\s\S]*\}/); obj = JSON.parse(mm ? mm[0] : text); } catch (e) { obj = null; }
+      var nameEl = document.getElementById("wt-eq-name"), notesEl = document.getElementById("wt-eq-notes"),
+          catEl = document.getElementById("wt-eq-cat"), setsEl = document.getElementById("wt-eq-sets"), repsEl = document.getElementById("wt-eq-reps");
+      if (obj) {
+        if (nameEl && !nameEl.value.trim() && obj.name) nameEl.value = obj.name;
+        if (catEl && obj.category && EQ_CATEGORIES.indexOf(obj.category) > -1) catEl.value = obj.category;
+        if (setsEl && obj.sets) setsEl.value = obj.sets;
+        if (repsEl && obj.reps) repsEl.value = obj.reps;
+        if (notesEl) notesEl.value = obj.how || text;
+        eqStatus("נותח וקוטלג ✓ — בדוק וערוך");
+      } else {
+        var firstName = (text.split("\n")[0] || "").replace(/^[*#\-\s]+/, "").trim();
+        if (nameEl && !nameEl.value.trim() && firstName) nameEl.value = firstName;
+        if (notesEl) notesEl.value = text;
+        eqStatus("נותח (טקסט) ✓ — בדוק וערוך");
+      }
     }).catch(function (e) { eqStatus("שגיאת AI: " + e.message); });
   }
   function renderThumbs() {
@@ -956,8 +984,8 @@ react/cjs/react-jsx-runtime.production.js:
   function renderEquipment() {
     eqPendingBlobs = [];
     renderThumbs();
-    ["wt-eq-name", "wt-eq-settings", "wt-eq-notes"].forEach(function (id) { var el = document.getElementById(id); if (el) el.value = ""; });
-    var sel = document.getElementById("wt-eq-ex"); if (sel) sel.value = "";
+    ["wt-eq-name", "wt-eq-settings", "wt-eq-notes", "wt-eq-sets", "wt-eq-reps"].forEach(function (id) { var el = document.getElementById(id); if (el) el.value = ""; });
+    ["wt-eq-ex", "wt-eq-cat"].forEach(function (id) { var el = document.getElementById(id); if (el) el.value = ""; });
     eqStatus("");
     if (!sbConfigured()) {
       var list = document.getElementById("wt-eq-list");
@@ -995,7 +1023,11 @@ react/cjs/react-jsx-runtime.production.js:
     var gallery = imgs.length
       ? '<div class="wt-mpop-imgs">' + imgs.map(function (u) { return '<img class="wt-eq-img" src="' + esc(u) + '" alt="">'; }).join("") + '</div>'
       : '<div class="wt-eq-img wt-eq-noimg">🏋️</div>';
-    return '<div class="wt-mpop-machine"><div class="wt-eq-name">' + esc(m.name) + '</div>' +
+    var meta = [];
+    if (m.category) meta.push(esc(m.category));
+    if (m.sets || m.reps) meta.push((m.sets || "?") + "×" + esc(m.reps || "?"));
+    var metaH = meta.length ? '<div class="wt-mpop-meta">' + meta.join(" · ") + '</div>' : '';
+    return '<div class="wt-mpop-machine"><div class="wt-eq-name">' + esc(m.name) + '</div>' + metaH +
       (m.settings ? '<div class="wt-eq-set">⚙️ ' + esc(m.settings) + '</div>' : '') +
       (m.notes ? '<div class="wt-eq-notes">' + esc(m.notes) + '</div>' : '') + gallery + '</div>';
   }
@@ -1310,7 +1342,7 @@ react/cjs/react-jsx-runtime.production.js:
       '<button class="wt-btn" id="wt-import">⬆ שחזור גיבוי</button>' +
       '<a class="wt-btn" href="index.html" style="text-decoration:none">⌂ חזרה לכל האפליקציות</a>' +
       '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">' +
-      '<div class="wt-ver">מהדורה 25.06 · v21 (התאמת תוכנית)</div>';
+      '<div class="wt-ver">מהדורה 25.06 · v22 (קטלוג AI)</div>';
 
     /* Rest timer overlay */
     timerOv = document.createElement("div");
@@ -1415,7 +1447,14 @@ react/cjs/react-jsx-runtime.production.js:
           '<input type="file" id="wt-eq-cam-file" accept="image/*" capture="environment" style="display:none">' +
           '<input type="file" id="wt-eq-gal-file" accept="image/*" multiple style="display:none">' +
           '<input id="wt-eq-name" class="wt-eq-input" placeholder="שם המכשיר (למשל: לג פרס אופקי)" autocomplete="off">' +
-          '<select id="wt-eq-ex" class="wt-eq-input"><option value="">— שייך לתרגיל (אופציונלי) —</option>' +
+          '<select id="wt-eq-cat" class="wt-eq-input"><option value="">— קטגוריה (שריר) —</option>' +
+            EQ_CATEGORIES.map(function (c) { return '<option value="' + c + '">' + c + '</option>'; }).join("") +
+          '</select>' +
+          '<div class="wt-eq-srrow">' +
+            '<input id="wt-eq-sets" class="wt-eq-input" type="number" inputmode="numeric" placeholder="סטים" autocomplete="off">' +
+            '<input id="wt-eq-reps" class="wt-eq-input" placeholder="חזרות (8-12)" autocomplete="off">' +
+          '</div>' +
+          '<select id="wt-eq-ex" class="wt-eq-input"><option value="">— שייך לתרגיל קיים (אופציונלי) —</option>' +
             Object.keys(EX_NAMES).map(function (k) { return '<option value="' + k + '">' + EX_NAMES[k] + '</option>'; }).join("") +
           '</select>' +
           '<input id="wt-eq-settings" class="wt-eq-input" placeholder="הגדרות: מושב חריץ 4, גב 3..." autocomplete="off">' +
@@ -1598,8 +1637,12 @@ react/cjs/react-jsx-runtime.production.js:
       if (!sbConfigured()) { eqStatus("צריך קודם להגדיר סנכרון ענן"); return; }
       var name = eqOv.querySelector("#wt-eq-name").value.trim();
       if (!name) { eqStatus("נא להזין שם מכשיר"); return; }
+      var setsV = parseInt(eqOv.querySelector("#wt-eq-sets").value, 10);
       var row = {
         name: name,
+        category: eqOv.querySelector("#wt-eq-cat").value || null,
+        sets: isNaN(setsV) ? null : setsV,
+        reps: eqOv.querySelector("#wt-eq-reps").value.trim() || null,
         ex_id: eqOv.querySelector("#wt-eq-ex").value || null,
         settings: eqOv.querySelector("#wt-eq-settings").value.trim() || null,
         notes: eqOv.querySelector("#wt-eq-notes").value.trim() || null
