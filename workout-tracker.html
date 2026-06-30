@@ -1005,16 +1005,19 @@ react/cjs/react-jsx-runtime.production.js:
   };
   var FULL_TO_EX = {};
   Object.keys(EX_FULL).forEach(function (k) { FULL_TO_EX[EX_FULL[k]] = k; });
-  var eqByEx = {};
+  var eqByEx = {}, eqAll = [];
+  function machineById(id) { return eqAll.filter(function (m) { return String(m.id) === String(id); })[0]; }
   function loadEqCache() {
     try { eqByEx = JSON.parse(localStorage.getItem("wt-equipment-cache") || "{}"); } catch (e) { eqByEx = {}; }
+    try { eqAll = JSON.parse(localStorage.getItem("wt-equipment-all") || "[]"); } catch (e) { eqAll = []; }
     injectWorkoutOverlays();
     if (!sbConfigured()) return;
     eqList().then(function (rows) {
       var m = {};
       rows.forEach(function (r) { if (r.ex_id) { (m[r.ex_id] = m[r.ex_id] || []).push(r); } });
-      eqByEx = m;
+      eqByEx = m; eqAll = rows;
       localStorage.setItem("wt-equipment-cache", JSON.stringify(m));
+      localStorage.setItem("wt-equipment-all", JSON.stringify(rows));
       injectWorkoutOverlays();
     }).catch(function () {});
   }
@@ -1063,17 +1066,17 @@ react/cjs/react-jsx-runtime.production.js:
       .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
       .then(function (rows) {
         var m = {};
-        rows.forEach(function (r) { m[r.ex_id] = { mode: r.mode, label: r.label }; });
+        rows.forEach(function (r) { m[r.ex_id] = { mode: r.mode, label: r.label, machine_id: r.machine_id }; });
         subsByEx = m;
         localStorage.setItem("wt-subs-cache", JSON.stringify(m));
         injectWorkoutOverlays();
       }).catch(function () {});
   }
-  function subsUpsert(exId, mode, label) {
+  function subsUpsert(exId, mode, label, machineId) {
     var c = sbCfg();
     return fetch(cleanUrl(c.url) + "/rest/v1/ex_subs", {
       method: "POST", headers: Object.assign(sbHeaders(), { Prefer: "resolution=merge-duplicates,return=minimal" }),
-      body: JSON.stringify({ owner: c.code, ex_id: exId, mode: mode, label: label || null, updated_at: new Date().toISOString() })
+      body: JSON.stringify({ owner: c.code, ex_id: exId, mode: mode, label: label || null, machine_id: machineId || null, updated_at: new Date().toISOString() })
     }).then(function (r) { if (!r.ok) return r.text().then(function (t) { throw new Error("HTTP " + r.status); }); });
   }
   function subsDelete(exId) {
@@ -1081,16 +1084,31 @@ react/cjs/react-jsx-runtime.production.js:
     return fetch(cleanUrl(c.url) + "/rest/v1/ex_subs?owner=eq." + encodeURIComponent(c.code) + "&ex_id=eq." + encodeURIComponent(exId), { method: "DELETE", headers: sbHeaders() })
       .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); });
   }
+  function machineOptions(selectedId) {
+    // <option>s of all catalogued machines, grouped by category
+    if (!eqAll.length) return "";
+    var groups = {};
+    eqAll.forEach(function (m) { var c = m.category || "ללא קטגוריה"; (groups[c] = groups[c] || []).push(m); });
+    return EQ_CATEGORIES.concat(["ללא קטגוריה"]).filter(function (c) { return groups[c]; }).map(function (c) {
+      return '<optgroup label="' + esc(c) + '">' + groups[c].map(function (m) {
+        return '<option value="' + esc(m.id) + '"' + (String(m.id) === String(selectedId) ? " selected" : "") + '>' + esc(m.name) + (m.sets || m.reps ? " (" + (m.sets || "?") + "×" + esc(m.reps || "?") + ")" : "") + '</option>';
+      }).join("") + '</optgroup>';
+    }).join("");
+  }
   function renderSubs(container) {
     if (!sbConfigured()) { container.innerHTML = '<div class="wt-empty">צריך קודם להגדיר סנכרון ענן (כלים → ☁️ סנכרון ענן).</div>'; return; }
-    var html = '<div class="wt-subs-help">לתרגיל שאתה לא עושה — כתוב מה אתה עושה במקום, או סמן "מדלג". זה יוצג באימון ליד התרגיל.</div>';
+    if (!eqAll.length) { container.innerHTML = '<div class="wt-empty">אין עדיין מכשירים בקטלוג.<br>קודם הוסף מכשירים ב-כלים → 🏋️ מאגר מכשירים.</div>'; loadEqCache(); return; }
+    var html = '<div class="wt-subs-help">לכל תרגיל בחר מכשיר מהקטלוג שלך לעשות במקום, או "מדלג". זה יוצג באימון ליד התרגיל.</div>';
     ["A", "B"].forEach(function (day) {
       html += '<h4 class="wt-subs-day">' + (day === "A" ? "אימון A · עליון" : "אימון B · תחתון") + '</h4>';
       EX_PROGRAM[day].forEach(function (exId) {
         var s = subsByEx[exId] || {};
         html += '<div class="wt-sub-row"><div class="wt-sub-ex">' + esc(EX_NAMES[exId] || exId) + '</div>' +
-          '<input class="wt-sub-input" data-ex="' + exId + '" placeholder="במקום זה אני עושה…" value="' + esc(s.mode === "replace" ? (s.label || "") : "") + '" autocomplete="off">' +
-          '<label class="wt-sub-skip"><input type="checkbox" data-skip="' + exId + '"' + (s.mode === "skip" ? " checked" : "") + '> מדלג</label></div>';
+          '<select class="wt-sub-input wt-sub-sel" data-ex="' + exId + '">' +
+            '<option value="">— ללא שינוי —</option>' +
+            '<option value="__skip__"' + (s.mode === "skip" ? " selected" : "") + '>⏭️ מדלג</option>' +
+            machineOptions(s.mode === "replace" ? s.machine_id : null) +
+          '</select></div>';
       });
     });
     html += '<button class="wt-chip primary" id="wt-subs-save">שמור התאמות</button>' +
@@ -1108,14 +1126,21 @@ react/cjs/react-jsx-runtime.production.js:
       var sub = subsByEx[exId], machines = eqByEx[exId];
       if (!sub && !(machines && machines.length)) return;
       var sib = el.nextElementSibling, box = (sib && sib.classList && sib.classList.contains("wt-winject")) ? sib : null;
-      var sig = (sub ? sub.mode + ":" + (sub.label || "") : "") + "|" + (machines ? machines.length : 0);
+      var sig = (sub ? sub.mode + ":" + (sub.label || "") + ":" + (sub.machine_id || "") : "") + "|" + (machines ? machines.length : 0);
       if (box && box.__sig === sig) return;
       if (!box) { box = document.createElement("div"); box.className = "wt-winject"; if (el.parentNode) el.parentNode.insertBefore(box, el.nextSibling); }
       box.__sig = sig; box.innerHTML = "";
       if (sub) {
         var sb = document.createElement("div");
         sb.className = "wt-sub-banner" + (sub.mode === "skip" ? " skip" : "");
-        sb.textContent = sub.mode === "skip" ? "⏭️ מדלג על תרגיל זה" : "🔄 במקום זה: " + sub.label;
+        if (sub.mode === "skip") {
+          sb.textContent = "⏭️ מדלג על תרגיל זה";
+        } else {
+          sb.textContent = "🔄 במקום זה: " + (sub.label || "מכשיר") + " ›";
+          sb.style.cursor = "pointer";
+          var mid = sub.machine_id;
+          sb.addEventListener("click", function (e) { e.stopPropagation(); var m = machineById(mid); if (m) openSingleMachine(m); });
+        }
         box.appendChild(sb);
       }
       if (machines && machines.length) {
@@ -1342,7 +1367,7 @@ react/cjs/react-jsx-runtime.production.js:
       '<button class="wt-btn" id="wt-import">⬆ שחזור גיבוי</button>' +
       '<a class="wt-btn" href="index.html" style="text-decoration:none">⌂ חזרה לכל האפליקציות</a>' +
       '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">' +
-      '<div class="wt-ver">מהדורה 25.06 · v22 (קטלוג AI)</div>';
+      '<div class="wt-ver">מהדורה 25.06 · v23 (החלפה ממכשיר)</div>';
 
     /* Rest timer overlay */
     timerOv = document.createElement("div");
@@ -1597,11 +1622,10 @@ react/cjs/react-jsx-runtime.production.js:
       var st = subsOv.querySelector("#wt-subs-status"); st.textContent = "שומר…";
       var ops = [];
       EX_PROGRAM.A.concat(EX_PROGRAM.B).forEach(function (exId) {
-        var input = subsOv.querySelector('.wt-sub-input[data-ex="' + exId + '"]');
-        var skip = subsOv.querySelector('input[data-skip="' + exId + '"]');
-        var label = input ? input.value.trim() : "";
-        if (skip && skip.checked) ops.push(subsUpsert(exId, "skip", null));
-        else if (label) ops.push(subsUpsert(exId, "replace", label));
+        var sel = subsOv.querySelector('.wt-sub-sel[data-ex="' + exId + '"]');
+        var val = sel ? sel.value : "";
+        if (val === "__skip__") ops.push(subsUpsert(exId, "skip", null, null));
+        else if (val) { var m = machineById(val); ops.push(subsUpsert(exId, "replace", m ? m.name : null, val)); }
         else if (subsByEx[exId]) ops.push(subsDelete(exId));
       });
       Promise.all(ops).then(function () { st.textContent = "נשמר ✓"; loadSubsCache(); })
