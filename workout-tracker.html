@@ -1257,7 +1257,13 @@ react/cjs/react-jsx-runtime.production.js:
       c.querySelectorAll(".wt-prog-card").forEach(function (card) {
         card.addEventListener("click", function () { var prog = progRows.filter(function (x) { return String(x.id) === card.getAttribute("data-id"); })[0]; if (prog) renderProgramView(prog); });
       });
-    }).catch(function (e) { c.innerHTML = '<div class="wt-empty">שגיאה: ' + esc(e.message) + '</div>'; });
+    }).catch(function (e) {
+      if (/404/.test(e.message)) {
+        c.innerHTML = '<div class="wt-empty">טבלת התוכניות עדיין לא קיימת ב-Supabase.<br>יש להריץ את ה-SQL ליצירת הטבלאות <b>programs</b> ו-<b>program_logs</b> (פעם אחת), ואז לרענן.</div>';
+      } else {
+        c.innerHTML = '<div class="wt-empty">שגיאה: ' + esc(e.message) + '</div>';
+      }
+    });
   }
   function renderProgItems() {
     var box = document.getElementById("wt-prog-items");
