@@ -1123,6 +1123,22 @@ react/cjs/react-jsx-runtime.production.js:
     A: ["bench", "latpd", "ohp", "row", "fly", "facepull", "latraise", "triceps", "curl", "hammer"],
     B: ["squat", "rdl", "legpress", "hamcurl", "calf", "plank", "crunch", "legraise"]
   };
+  var EX_CAT = {
+    bench: "חזה", fly: "חזה", latpd: "גב", row: "גב", ohp: "כתפיים", facepull: "כתפיים",
+    latraise: "כתפיים", triceps: "יד אחורית", curl: "יד קדמית", hammer: "יד קדמית",
+    squat: "רגליים", rdl: "רגליים", legpress: "רגליים", hamcurl: "רגליים", calf: "רגליים",
+    plank: "ליבה", crunch: "ליבה", legraise: "ליבה"
+  };
+  // Built-in A/B as importable, editable program seeds for "My Programs".
+  var BUILTIN_PROGRAMS = [
+    { key: "A", name: "אימון A · עליון" },
+    { key: "B", name: "אימון B · תחתון" }
+  ];
+  function builtinSeed(key) {
+    return EX_PROGRAM[key].map(function (exId) {
+      return { name: EX_FULL[exId] || EX_NAMES[exId] || exId, category: EX_CAT[exId] || "", sets: 3, reps: "8-12" };
+    });
+  }
   var subsByEx = {};
   function loadSubsCache() {
     try { subsByEx = JSON.parse(localStorage.getItem("wt-subs-cache") || "{}"); } catch (e) { subsByEx = {}; }
@@ -1246,14 +1262,25 @@ react/cjs/react-jsx-runtime.production.js:
     c.innerHTML = '<div class="wt-empty">טוען…</div>';
     programsList().then(function (rows) {
       progRows = rows;
+      var existingNames = rows.map(function (p) { return p.name; });
+      var missingAB = BUILTIN_PROGRAMS.filter(function (b) { return existingNames.indexOf(b.name) === -1; });
       var cards = rows.map(function (prog) {
         return '<div class="wt-prog-card" data-id="' + esc(prog.id) + '"><b>' + esc(prog.name) + '</b><span>' + ((prog.items || []).length) + ' תרגילים</span></div>';
       }).join("");
+      var importBtn = missingAB.length
+        ? '<button class="wt-chip" id="wt-prog-import">📥 ייבא את ' + missingAB.map(function (b) { return b.key; }).join(" ו-") + ' לעריכה</button>'
+        : "";
       c.innerHTML = '<button class="wt-chip primary" id="wt-prog-ai">✨ צור תוכנית חכמה (AI)</button>' +
-        '<button class="wt-chip" id="wt-prog-new">➕ תוכנית ידנית</button>' +
-        (cards || '<div class="wt-empty">אין עדיין תוכניות.<br>נסה "צור תוכנית חכמה" ✨</div>');
+        '<button class="wt-chip" id="wt-prog-new">➕ תוכנית ידנית</button>' + importBtn +
+        (cards || '<div class="wt-empty">אין עדיין תוכניות.<br>נסה "צור תוכנית חכמה" ✨<br>או ייבא את A ו-B לעריכה 📥</div>');
       document.getElementById("wt-prog-ai").addEventListener("click", function () { wizState = {}; renderWizard(); });
       document.getElementById("wt-prog-new").addEventListener("click", function () { renderProgramEdit({ name: "", items: [] }); });
+      var imp = document.getElementById("wt-prog-import");
+      if (imp) imp.addEventListener("click", function () {
+        imp.disabled = true; imp.textContent = "מייבא…";
+        Promise.all(missingAB.map(function (b) { return programsSave({ name: b.name, items: builtinSeed(b.key) }); }))
+          .then(openPrograms).catch(function (e) { imp.disabled = false; imp.textContent = "שגיאה: " + e.message; });
+      });
       c.querySelectorAll(".wt-prog-card").forEach(function (card) {
         card.addEventListener("click", function () { var prog = progRows.filter(function (x) { return String(x.id) === card.getAttribute("data-id"); })[0]; if (prog) renderProgramView(prog); });
       });
