@@ -126,18 +126,22 @@
   .wt-mpop-meta { font-size: 12.5px; color: #6F7277; font-weight: 700; margin: 2px 0 4px; }
   html.wt-dark .wt-mpop-meta { color: #A7AAB0; }
   /* My programs */
-  .wt-prog-body { width: 100%; max-width: 460px; padding: 0 16px 32px; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; }
-  .wt-prog-card { background: rgba(255,255,255,.7); border-radius: 12px; padding: 14px; cursor: pointer;
-    display: flex; align-items: center; justify-content: space-between; }
-  html.wt-dark .wt-prog-card { background: rgba(255,255,255,.06); }
+  .wt-prog-body { width: 100%; max-width: 460px; padding: 0 16px 32px; box-sizing: border-box; display: flex; flex-direction: column; gap: 9px; }
+  .wt-prog-card { background: #fff; border-radius: 16px; padding: 15px 16px; cursor: pointer;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    box-shadow: 0 1px 3px rgba(20,19,15,.06), 0 1px 0 rgba(20,19,15,.02); transition: transform .12s ease; }
+  .wt-prog-card:active { transform: scale(.985); }
+  html.wt-dark .wt-prog-card { background: rgba(255,255,255,.07); box-shadow: none; }
+  .wt-prog-cardmain { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
   .wt-prog-card b { font-size: 16px; font-weight: 800; }
-  .wt-prog-card span { font-size: 12px; color: #7C7F85; }
-  .wt-prog-card.wt-prog-builtin { flex-direction: column; align-items: flex-end; gap: 4px;
-    border: 1.5px solid rgba(47,48,51,.12); background: rgba(255,255,255,.85); }
-  html.wt-dark .wt-prog-card.wt-prog-builtin { border-color: rgba(255,255,255,.12); background: rgba(255,255,255,.08); }
-  .wt-prog-sec { font-size: 12px; font-weight: 800; color: #8A8D93; letter-spacing: .03em;
-    margin: 14px 2px 2px; }
-  .wt-prog-sec:first-child { margin-top: 2px; }
+  .wt-prog-card span { font-size: 12.5px; color: #8A8D93; }
+  .wt-prog-go { font-size: 24px; font-weight: 700; color: #C4C2BD; flex: 0 0 auto; line-height: 1; }
+  html.wt-dark .wt-prog-go { color: #55575C; }
+  .wt-prog-card.wt-prog-builtin { border: 1.5px solid rgba(47,122,61,.22); }
+  html.wt-dark .wt-prog-card.wt-prog-builtin { border-color: rgba(106,168,79,.35); }
+  .wt-prog-sec { font-size: 11.5px; font-weight: 800; color: #A0A29A; letter-spacing: .08em;
+    text-transform: uppercase; margin: 16px 4px 3px; }
+  .wt-prog-sec:first-child { margin-top: 4px; }
   .wt-prog-actions { display: flex; gap: 8px; }
   #wt-programs .wt-chip.primary { width: 100%; padding: 12px; }
   .wt-prog-item { background: rgba(0,0,0,.04); border-radius: 10px; padding: 9px 11px; }
@@ -1129,12 +1133,23 @@ react/cjs/react-jsx-runtime.production.js:
     A: ["bench", "latpd", "ohp", "row", "fly", "facepull", "latraise", "triceps", "curl", "hammer"],
     B: ["squat", "rdl", "legpress", "hamcurl", "calf", "plank", "crunch", "legraise"]
   };
-  // Built-in A/B. Shown in "My Programs" as linked cards that open the
-  // substitution editor (swap/skip → reflected on the real colored workout).
+  var EX_CAT = {
+    bench: "חזה", fly: "חזה", latpd: "גב", row: "גב", ohp: "כתפיים", facepull: "כתפיים",
+    latraise: "כתפיים", triceps: "יד אחורית", curl: "יד קדמית", hammer: "יד קדמית",
+    squat: "רגליים", rdl: "רגליים", legpress: "רגליים", hamcurl: "רגליים", calf: "רגליים",
+    plank: "ליבה", crunch: "ליבה", legraise: "ליבה"
+  };
+  // Built-in A/B — shown in "My Programs" as fully editable programs
+  // (add/remove/reorder). First edit persists a copy to the programs table.
   var BUILTIN_PROGRAMS = [
     { key: "A", name: "אימון A · עליון" },
     { key: "B", name: "אימון B · תחתון" }
   ];
+  function builtinSeed(key) {
+    return EX_PROGRAM[key].map(function (exId) {
+      return { ex_id: exId, name: EX_FULL[exId] || EX_NAMES[exId] || exId, category: EX_CAT[exId] || "", sets: 3, reps: "8-12" };
+    });
+  }
   var subsByEx = {};
   function loadSubsCache() {
     try { subsByEx = JSON.parse(localStorage.getItem("wt-subs-cache") || "{}"); } catch (e) { subsByEx = {}; }
@@ -1257,18 +1272,25 @@ react/cjs/react-jsx-runtime.production.js:
     if (!eqAll.length) loadEqCache();
     c.innerHTML = '<div class="wt-empty">טוען…</div>';
     programsList().then(function (rows) {
+      progRows = rows;
       var builtinNames = BUILTIN_PROGRAMS.map(function (b) { return b.name; });
-      // Hide the old disconnected A/B copies — A/B are now edited via the linked substitution editor.
-      progRows = rows.filter(function (p) { return builtinNames.indexOf(p.name) === -1; });
+      // A/B cards: open the saved copy if edited before, else the built-in seed — full editor either way.
       var builtinCards = BUILTIN_PROGRAMS.map(function (b) {
-        return '<div class="wt-prog-card wt-prog-builtin" data-day="' + b.key + '"><b>' + esc(b.name) + '</b>' +
-          '<span>🔵 התאם — יופיע באימון האמיתי · ' + EX_PROGRAM[b.key].length + ' תרגילים</span></div>';
+        var saved = rows.filter(function (p) { return p.name === b.name; })[0];
+        var count = saved ? (saved.items || []).length : EX_PROGRAM[b.key].length;
+        return '<div class="wt-prog-card wt-prog-builtin" data-day="' + b.key + '"><div class="wt-prog-cardmain">' +
+          '<b>' + esc(b.name) + '</b><span>' + count + ' תרגילים · לחץ לעריכה מלאה</span></div>' +
+          '<div class="wt-prog-go">›</div></div>';
       }).join("");
-      var cards = progRows.map(function (prog) {
-        return '<div class="wt-prog-card" data-id="' + esc(prog.id) + '"><b>' + esc(prog.name) + '</b><span>' + ((prog.items || []).length) + ' תרגילים</span></div>';
+      // Custom programs = everything that isn't one of the A/B copies (shown above).
+      var customRows = rows.filter(function (p) { return builtinNames.indexOf(p.name) === -1; });
+      var cards = customRows.map(function (prog) {
+        return '<div class="wt-prog-card" data-id="' + esc(prog.id) + '"><div class="wt-prog-cardmain">' +
+          '<b>' + esc(prog.name) + '</b><span>' + ((prog.items || []).length) + ' תרגילים</span></div>' +
+          '<div class="wt-prog-go">›</div></div>';
       }).join("");
       c.innerHTML =
-        '<div class="wt-prog-sec">האימונים שלך (A/B)</div>' + builtinCards +
+        '<div class="wt-prog-sec">האימונים שלך</div>' + builtinCards +
         '<div class="wt-prog-sec">תוכניות מותאמות אישית</div>' +
         '<button class="wt-chip primary" id="wt-prog-ai">✨ צור תוכנית חכמה (AI)</button>' +
         '<button class="wt-chip" id="wt-prog-new">➕ תוכנית ידנית</button>' +
@@ -1277,11 +1299,10 @@ react/cjs/react-jsx-runtime.production.js:
       document.getElementById("wt-prog-new").addEventListener("click", function () { renderProgramEdit({ name: "", items: [] }); });
       c.querySelectorAll(".wt-prog-builtin").forEach(function (card) {
         card.addEventListener("click", function () {
-          var day = card.getAttribute("data-day");
-          document.getElementById("wt-programs").classList.remove("open");
-          var subsOv = document.getElementById("wt-subs");
-          renderSubs(subsOv.querySelector("#wt-subs-body"), day);
-          subsOv.classList.add("open");
+          var b = BUILTIN_PROGRAMS.filter(function (x) { return x.key === card.getAttribute("data-day"); })[0];
+          var saved = progRows.filter(function (p) { return p.name === b.name; })[0];
+          if (saved) renderProgramView(saved);
+          else renderProgramEdit({ name: b.name, items: builtinSeed(b.key) });
         });
       });
       c.querySelectorAll(".wt-prog-card:not(.wt-prog-builtin)").forEach(function (card) {
@@ -1302,7 +1323,8 @@ react/cjs/react-jsx-runtime.production.js:
     box.innerHTML = progEditing.items.map(function (it, i) {
       var m = machineById(it.machine_id);
       var nm = it.name || (m && m.name) || "תרגיל";
-      return '<div class="wt-prog-item"><div class="wt-prog-it-name">' + (i + 1) + ". " + esc(nm) + (it.machine_id ? "" : " 💡") + '</div>' +
+      var badge = (!it.machine_id && !it.ex_id) ? " 💡" : (it.machine_id ? " 🏋️" : "");
+      return '<div class="wt-prog-item"><div class="wt-prog-it-name">' + (i + 1) + ". " + esc(nm) + badge + '</div>' +
         '<div class="wt-prog-it-ctl"><input class="wt-prog-sets" data-i="' + i + '" type="number" value="' + esc(it.sets || "") + '" placeholder="סטים">' +
         '<input class="wt-prog-reps" data-i="' + i + '" value="' + esc(it.reps || "") + '" placeholder="חזרות">' +
         '<button class="wt-prog-mv" data-i="' + i + '" data-d="-1">▲</button><button class="wt-prog-mv" data-i="' + i + '" data-d="1">▼</button>' +
@@ -1356,10 +1378,11 @@ react/cjs/react-jsx-runtime.production.js:
       var m = machineById(it.machine_id);
       var nm = it.name || (m && m.name) || "תרגיל", cat = it.category || (m && m.category) || "";
       var imgs = m ? imagesOf(m) : [];
-      var img = imgs.length ? '<img class="wt-eq-img" src="' + esc(imgs[0]) + '" alt="">' : '<div class="wt-eq-img wt-eq-noimg">' + (m ? "🏋️" : "💡") + '</div>';
+      var isAI = !it.machine_id && !it.ex_id;
+      var img = imgs.length ? '<img class="wt-eq-img" src="' + esc(imgs[0]) + '" alt="">' : '<div class="wt-eq-img wt-eq-noimg">' + (m ? "🏋️" : (isAI ? "💡" : "🏋️")) + '</div>';
       return '<div class="wt-prog-vitem"' + (m ? ' data-open="' + esc(m.id) + '"' : "") + '><div class="wt-eq-imgwrap">' + img + '</div><div class="wt-eq-info">' +
         '<div class="wt-eq-name">' + (i + 1) + ". " + esc(nm) + ' <span class="wt-eq-sr">' + (it.sets || (m && m.sets) || "?") + "×" + esc(it.reps || (m && m.reps) || "?") + '</span></div>' +
-        (cat ? '<div class="wt-eq-notes">' + esc(cat) + (it.machine_id ? "" : " · הצעת AI") + '</div>' : '') +
+        (cat ? '<div class="wt-eq-notes">' + esc(cat) + (isAI ? " · הצעת AI" : "") + '</div>' : '') +
         (m && m.settings ? '<div class="wt-eq-set">⚙️ ' + esc(m.settings) + '</div>' : '') +
         (it.how && !m ? '<div class="wt-eq-notes">' + esc(it.how) + '</div>' : '') + '</div></div>';
     }).join("");
@@ -1737,7 +1760,7 @@ react/cjs/react-jsx-runtime.production.js:
       '<button class="wt-btn" id="wt-import">⬆ שחזור גיבוי</button>' +
       '<a class="wt-btn" href="index.html" style="text-decoration:none">⌂ חזרה לכל האפליקציות</a>' +
       '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">' +
-      '<div class="wt-ver">מהדורה 25.06 · v27 (A/B מחובר)</div>';
+      '<div class="wt-ver">מהדורה 25.06 · v28 (עריכת A/B מלאה)</div>';
 
     /* Rest timer overlay */
     timerOv = document.createElement("div");
