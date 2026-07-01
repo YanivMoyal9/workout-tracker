@@ -23,19 +23,43 @@
   html.wt-dark #boot { color: #B8BBC1; }
 
   /* ===== Backup / settings floating panel (independent of the React app) ===== */
-  #wt-panel { position: fixed; bottom: calc(72px + env(safe-area-inset-bottom)); left: 14px; z-index: 99999;
-    width: 220px; background: #fff; color: #2F3033; border-radius: 14px;
-    box-shadow: 0 8px 30px rgba(0,0,0,.22); padding: 12px; display: none;
+  /* Tools panel — modern bottom sheet */
+  #wt-panel { position: fixed; inset: 0; z-index: 99999; display: none;
+    align-items: flex-end; justify-content: center;
+    background: rgba(20,19,15,.42); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
     font-family: system-ui, sans-serif; direction: rtl; }
-  html.wt-dark #wt-panel { background: #232427; color: #E9E9EC; }
-  #wt-panel.open { display: block; }
-  #wt-panel h4 { margin: 2px 0 10px; font-size: 14px; font-weight: 700; }
-  .wt-btn { display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box;
-    margin: 6px 0; padding: 10px 12px; border: none; border-radius: 10px; cursor: pointer;
-    font-size: 14px; font-family: inherit; text-align: right; background: #EEEDEA; color: #2F3033; }
+  #wt-panel.open { display: flex; }
+  .wt-sheet { width: 100%; max-width: 460px; max-height: 88vh; overflow-y: auto;
+    background: #F4F2EF; color: #2F3033; border-radius: 22px 22px 0 0;
+    box-shadow: 0 -8px 40px rgba(0,0,0,.28); padding: 8px 16px calc(20px + env(safe-area-inset-bottom));
+    box-sizing: border-box; animation: wt-sheet-up .26s cubic-bezier(.22,.61,.36,1); }
+  html.wt-dark .wt-sheet { background: #202124; color: #E9E9EC; }
+  @keyframes wt-sheet-up { from { transform: translateY(24px); opacity: .4; } to { transform: none; opacity: 1; } }
+  .wt-sheet-grip { width: 40px; height: 5px; border-radius: 3px; background: rgba(0,0,0,.16); margin: 6px auto 4px; }
+  html.wt-dark .wt-sheet-grip { background: rgba(255,255,255,.22); }
+  .wt-panel-head { display: flex; align-items: center; justify-content: space-between; margin: 4px 2px 6px; }
+  .wt-panel-head h4 { margin: 0; font-size: 18px; font-weight: 800; }
+  .wt-panel-x { width: 34px; height: 34px; border: none; border-radius: 50%; cursor: pointer;
+    background: rgba(0,0,0,.06); color: inherit; font-size: 15px; line-height: 1; }
+  html.wt-dark .wt-panel-x { background: rgba(255,255,255,.10); }
+  .wt-panel-sec { font-size: 11.5px; font-weight: 800; color: #A0A29A; letter-spacing: .08em;
+    text-transform: uppercase; margin: 16px 4px 8px; }
+  .wt-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
+  .wt-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+    min-height: 84px; padding: 10px 6px; border: none; border-radius: 15px; cursor: pointer;
+    background: #fff; color: #2F3033; font-family: inherit; font-size: 12.5px; font-weight: 700; text-align: center;
+    box-shadow: 0 1px 3px rgba(20,19,15,.06); transition: transform .12s ease; }
+  .wt-tile:active { transform: scale(.95); }
+  .wt-tile:focus-visible { outline: 2.5px solid #6AA84F; outline-offset: 2px; }
+  html.wt-dark .wt-tile { background: rgba(255,255,255,.07); color: #E9E9EC; box-shadow: none; }
+  .wt-tile-i { font-size: 25px; line-height: 1; }
+  .wt-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; box-sizing: border-box;
+    margin: 10px 0 2px; padding: 13px 12px; border: none; border-radius: 13px; cursor: pointer;
+    font-size: 14px; font-weight: 700; font-family: inherit; text-align: center; background: #E7E5E1; color: #2F3033; }
   html.wt-dark .wt-btn { background: #34363A; color: #E9E9EC; }
-  .wt-btn:active { opacity: .8; }
-  .wt-ver { text-align: center; font-size: 10.5px; color: #A7A9AD; margin: 8px 2px 2px; }
+  .wt-btn:active { transform: scale(.98); }
+  .wt-btn:focus-visible { outline: 2.5px solid #6AA84F; outline-offset: 2px; }
+  .wt-ver { text-align: center; font-size: 10.5px; color: #A7A9AD; margin: 14px 2px 2px; }
   /* Cloud sync form */
   .wt-sync-body { width: 100%; max-width: 440px; padding: 0 18px 32px; box-sizing: border-box; }
   .wt-sync-help { font-size: 13.5px; color: #6F7277; margin: 4px 0 16px; line-height: 1.5; }
@@ -249,8 +273,10 @@
     box-shadow: 0 2px 10px rgba(0,0,0,.18); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
   #wt-home:active { transform: scale(.92); }
   html.wt-dark #wt-home { background: #232427; color: #E9E9EC; }
-  .wt-row { display: flex; align-items: center; justify-content: space-between;
-    margin: 6px 2px; font-size: 14px; }
+  .wt-row { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    margin: 9px 0; padding: 13px 15px; font-size: 14.5px; font-weight: 700;
+    background: #fff; border-radius: 13px; box-shadow: 0 1px 3px rgba(20,19,15,.06); }
+  html.wt-dark .wt-row { background: rgba(255,255,255,.07); box-shadow: none; }
   .wt-switch { position: relative; width: 42px; height: 24px; }
   .wt-switch input { opacity: 0; width: 0; height: 0; }
   .wt-slider { position: absolute; inset: 0; background: #C9C7C2; border-radius: 24px; transition: .2s; cursor: pointer; }
@@ -1741,26 +1767,38 @@ react/cjs/react-jsx-runtime.production.js:
     panel = document.createElement("div");
     panel.id = "wt-panel";
     panel.innerHTML =
-      '<h4>כלים והגדרות</h4>' +
-      '<div class="wt-row"><span>מצב כהה</span>' +
-        '<label class="wt-switch"><input type="checkbox" id="wt-dark-toggle">' +
-        '<span class="wt-slider"></span></label></div>' +
-      '<div class="wt-row"><span>טיימר אוטומטי בסימון סט</span>' +
-        '<label class="wt-switch"><input type="checkbox" id="wt-auto-toggle">' +
-        '<span class="wt-slider"></span></label></div>' +
-      '<button class="wt-btn" id="wt-records">🏆 שיאים אישיים</button>' +
-      '<button class="wt-btn" id="wt-streak-btn">🔥 עקביות ורצף</button>' +
-      '<button class="wt-btn" id="wt-nut-btn">🍎 תזונה היום</button>' +
-      '<button class="wt-btn" id="wt-eq-btn">🏋️ מאגר מכשירים</button>' +
-      '<button class="wt-btn" id="wt-subs-btn">🔄 התאמת תוכנית</button>' +
-      '<button class="wt-btn" id="wt-prog-btn">📋 התוכניות שלי</button>' +
-      '<button class="wt-btn" id="wt-rest">⏱ טיימר מנוחה</button>' +
-      '<button class="wt-btn" id="wt-sync-btn">☁️ סנכרון ענן</button>' +
-      '<button class="wt-btn" id="wt-export">⬇ ייצוא גיבוי</button>' +
-      '<button class="wt-btn" id="wt-import">⬆ שחזור גיבוי</button>' +
-      '<a class="wt-btn" href="index.html" style="text-decoration:none">⌂ חזרה לכל האפליקציות</a>' +
-      '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">' +
-      '<div class="wt-ver">מהדורה 25.06 · v28 (עריכת A/B מלאה)</div>';
+      '<div class="wt-sheet" role="dialog" aria-label="כלים והגדרות">' +
+        '<div class="wt-sheet-grip"></div>' +
+        '<div class="wt-panel-head"><h4>כלים והגדרות</h4>' +
+          '<button class="wt-panel-x" id="wt-panel-close" aria-label="סגור">✕</button></div>' +
+        '<div class="wt-panel-sec">אימונים</div>' +
+        '<div class="wt-tiles">' +
+          '<button class="wt-tile" id="wt-prog-btn"><span class="wt-tile-i">📋</span><span>התוכניות שלי</span></button>' +
+          '<button class="wt-tile" id="wt-eq-btn"><span class="wt-tile-i">🏋️</span><span>מאגר מכשירים</span></button>' +
+          '<button class="wt-tile" id="wt-rest"><span class="wt-tile-i">⏱️</span><span>טיימר מנוחה</span></button>' +
+        '</div>' +
+        '<div class="wt-panel-sec">הנתונים שלי</div>' +
+        '<div class="wt-tiles">' +
+          '<button class="wt-tile" id="wt-records"><span class="wt-tile-i">🏆</span><span>שיאים</span></button>' +
+          '<button class="wt-tile" id="wt-streak-btn"><span class="wt-tile-i">🔥</span><span>עקביות</span></button>' +
+          '<button class="wt-tile" id="wt-nut-btn"><span class="wt-tile-i">🍎</span><span>תזונה</span></button>' +
+        '</div>' +
+        '<div class="wt-panel-sec">הגדרות</div>' +
+        '<div class="wt-row"><span>🌙 מצב כהה</span>' +
+          '<label class="wt-switch"><input type="checkbox" id="wt-dark-toggle" aria-label="מצב כהה">' +
+          '<span class="wt-slider"></span></label></div>' +
+        '<div class="wt-row"><span>⏱️ טיימר אוטומטי בסימון סט</span>' +
+          '<label class="wt-switch"><input type="checkbox" id="wt-auto-toggle" aria-label="טיימר אוטומטי">' +
+          '<span class="wt-slider"></span></label></div>' +
+        '<div class="wt-tiles">' +
+          '<button class="wt-tile" id="wt-sync-btn"><span class="wt-tile-i">☁️</span><span>סנכרון ענן</span></button>' +
+          '<button class="wt-tile" id="wt-export"><span class="wt-tile-i">⬇️</span><span>ייצוא גיבוי</span></button>' +
+          '<button class="wt-tile" id="wt-import"><span class="wt-tile-i">⬆️</span><span>שחזור גיבוי</span></button>' +
+        '</div>' +
+        '<a class="wt-btn" href="index.html" style="text-decoration:none">⌂ חזרה לכל האפליקציות</a>' +
+        '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">' +
+        '<div class="wt-ver">מהדורה 25.06 · v29</div>' +
+      '</div>';
 
     /* Rest timer overlay */
     timerOv = document.createElement("div");
@@ -1947,7 +1985,11 @@ react/cjs/react-jsx-runtime.production.js:
     timeB = timerOv.querySelector("#wt-time-b");
     timeSpan = timerOv.querySelector("#wt-time-s");
 
-    // Close the panel when tapping outside it (but not on the "כלים" tab).
+    // Close the panel when tapping the dimmed backdrop, the ✕, or outside it.
+    panel.addEventListener("click", function (e) {
+      if (e.target === panel) panel.classList.remove("open");
+    });
+    panel.querySelector("#wt-panel-close").addEventListener("click", function () { panel.classList.remove("open"); });
     document.addEventListener("click", function (e) {
       if (!panel.contains(e.target) && !e.target.closest(".wt-tools-tab")) panel.classList.remove("open");
     });
@@ -2024,12 +2066,7 @@ react/cjs/react-jsx-runtime.production.js:
     });
     nutOv.querySelector("#wt-nut-close").addEventListener("click", function () { nutOv.classList.remove("open"); });
 
-    /* Program substitutions */
-    panel.querySelector("#wt-subs-btn").addEventListener("click", function () {
-      panel.classList.remove("open");
-      renderSubs(subsOv.querySelector("#wt-subs-body"));
-      subsOv.classList.add("open");
-    });
+    /* Program substitutions overlay (kept for the colored-workout swap, opened programmatically) */
     subsOv.querySelector("#wt-subs-close").addEventListener("click", function () { subsOv.classList.remove("open"); });
     subsOv.addEventListener("click", function (e) {
       if (e.target.id !== "wt-subs-save") return;
