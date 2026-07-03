@@ -322,7 +322,9 @@
   .wt-overlay h2 { font-size: 19px; margin: 18px 0 4px; font-weight: 800; }
 
   /* Rest timer */
-  #wt-timer { justify-content: center; }
+  /* The rest timer must stack above every other overlay (it is opened from
+     inside the runner, which comes later in the DOM and would cover it) */
+  #wt-timer { justify-content: center; z-index: 100002; }
   .wt-ring-wrap { position: relative; width: 240px; height: 240px; margin: 8px 0 20px; }
   .wt-ring-wrap svg { transform: rotate(-90deg); }
   .wt-ring-bg { fill: none; stroke: rgba(0,0,0,.10); stroke-width: 14; }
@@ -1969,7 +1971,7 @@ react/cjs/react-jsx-runtime.production.js:
         '</div>' +
         '<a class="wt-btn" href="index.html" style="text-decoration:none">⌂ חזרה לכל האפליקציות</a>' +
         '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">' +
-        '<div class="wt-ver">מהדורה 25.06 · v33 (עדכון אוטומטי)</div>' +
+        '<div class="wt-ver">מהדורה 25.06 · v34 (טיימר מעל אימון)</div>' +
       '</div>';
 
     /* Rest timer overlay */
@@ -2410,7 +2412,7 @@ react/cjs/react-jsx-runtime.production.js:
      triggers one automatic cache-busting reload, or a tap-to-refresh pill when
      a workout is running. APP_VER must be bumped together with version.txt and
      the wt-ver stamp on every deploy. */
-  var APP_VER = 33;
+  var APP_VER = 34;
   function bustReload() { location.replace(location.pathname + "?u=" + Date.now()); }
   function showUpdateBanner() {
     if (document.getElementById("wt-update")) return;
