@@ -203,6 +203,14 @@
     transition: opacity .3s ease, box-shadow .3s ease; }
   html.wt-dark .wt-run-ex { background: rgba(255,255,255,.06); }
   .wt-run-ex.complete { opacity: .68; box-shadow: inset 3px 0 0 #2F7A3D; }
+  .wt-run-ex.current { box-shadow: 0 0 0 2px rgba(47,122,61,.45), 0 4px 14px rgba(47,122,61,.10); }
+  .wt-run-st { width: 30px; height: 42px; flex: 0 0 auto; border: none; border-radius: 9px;
+    background: rgba(0,0,0,.06); color: inherit; font-size: 19px; font-weight: 700; cursor: pointer;
+    transition: transform .1s ease; }
+  .wt-run-st:active { transform: scale(.9); }
+  html.wt-dark .wt-run-st { background: rgba(255,255,255,.10); }
+  .wt-run-set.done input { background: rgba(47,122,61,.08); border-color: rgba(47,122,61,.35); }
+  html.wt-dark .wt-run-set.done input { background: rgba(47,122,61,.16); }
   .wt-run-chip { font-size: 11.5px; font-weight: 800; color: #7C7F85; background: rgba(0,0,0,.06);
     padding: 3px 9px; border-radius: 999px; flex: 0 0 auto; align-self: flex-start;
     transition: background .25s ease, color .25s ease; }
@@ -1649,19 +1657,39 @@ react/cjs/react-jsx-runtime.production.js:
   }
   function updateRunnerProgress() {
     if (!runnerState) return;
-    var tot = 0, dn = 0;
+    var tot = 0, dn = 0, vol = 0, currentSet = false;
     runnerState.exercises.forEach(function (ex, ei) {
-      var t = ex.sets.length, d = ex.sets.filter(function (s) { return s.done; }).length;
+      var t = ex.sets.length, d = 0;
+      ex.sets.forEach(function (s) { if (s.done) { d++; vol += (parseFloat(s.w) || 0) * (parseFloat(s.r) || 0); } });
       tot += t; dn += d;
       var chip = document.querySelector('.wt-run-chip[data-chip="' + ei + '"]');
       if (chip) { chip.textContent = d + "/" + t; chip.classList.toggle("done", t > 0 && d === t); }
       var card = document.querySelector('.wt-run-ex[data-ex="' + ei + '"]');
-      if (card) card.classList.toggle("complete", t > 0 && d === t);
+      if (card) {
+        card.classList.toggle("complete", t > 0 && d === t);
+        var isCurrent = !currentSet && d < t;
+        if (isCurrent) currentSet = true;
+        card.classList.toggle("current", isCurrent);
+      }
     });
     var pr = document.getElementById("wt-runner-prog");
-    if (pr) pr.textContent = dn + "/" + tot + " סטים";
+    if (pr) pr.textContent = dn + "/" + tot + " סטים" + (vol ? " · " + Math.round(vol).toLocaleString() + ' ק״ג' : "");
     var fill = document.getElementById("wt-runbar-fill");
     if (fill) fill.style.width = (tot ? Math.round(dn / tot * 100) : 0) + "%";
+  }
+  /* Marking a set done with empty fields fills them in automatically:
+     weight from the previous set (or the last-time hint), reps from the
+     previous set (or the plan's target) — so ticking ✓ is enough. */
+  function autofillSet(ex, si) {
+    var s = ex.sets[si], prev = null;
+    for (var i = si - 1; i >= 0; i--) { if (parseFloat(ex.sets[i].w)) { prev = ex.sets[i]; break; } }
+    var hint = hintFor(ex);
+    if (!parseFloat(s.w)) s.w = prev ? prev.w : (hint ? String(hint.w) : s.w);
+    if (!parseFloat(s.r)) {
+      if (prev && parseFloat(prev.r)) s.r = prev.r;
+      else if (hint && hint.r) s.r = String(hint.r);
+      else { var m = /\d+/.exec(ex.reps || ""); if (m) s.r = m[0]; }
+    }
   }
   function renderRunner() {
     var body = document.getElementById("wt-runner-body");
@@ -1671,8 +1699,10 @@ react/cjs/react-jsx-runtime.production.js:
       var img = ex.image ? '<img class="wt-eq-img" src="' + esc(ex.image) + '" alt="">' : '<div class="wt-eq-img wt-eq-noimg">🏋️</div>';
       var hint = hintFor(ex);
       var rows = ex.sets.map(function (s, si) {
-        return '<div class="wt-run-set"><span class="wt-run-sn">' + (si + 1) + '</span>' +
+        return '<div class="wt-run-set' + (s.done ? " done" : "") + '"><span class="wt-run-sn">' + (si + 1) + '</span>' +
+          '<button class="wt-run-st" data-e="' + ei + '" data-s="' + si + '" data-d="-2.5" aria-label="הפחת משקל">−</button>' +
           '<input class="wt-run-w" data-e="' + ei + '" data-s="' + si + '" type="number" inputmode="decimal" value="' + esc(s.w) + '" placeholder="' + (hint ? esc(hint.w) : "ק״ג") + '">' +
+          '<button class="wt-run-st" data-e="' + ei + '" data-s="' + si + '" data-d="2.5" aria-label="הוסף משקל">+</button>' +
           '<input class="wt-run-r" data-e="' + ei + '" data-s="' + si + '" type="number" inputmode="numeric" value="' + esc(s.r) + '" placeholder="' + esc(ex.reps || "חזרות") + '">' +
           '<button class="wt-run-done' + (s.done ? " on" : "") + '" data-e="' + ei + '" data-s="' + si + '" aria-label="סיימתי סט">✓</button></div>';
       }).join("");
@@ -1686,11 +1716,32 @@ react/cjs/react-jsx-runtime.production.js:
     }).join("");
     body.querySelectorAll(".wt-run-w").forEach(function (el) { el.addEventListener("input", function () { runnerState.exercises[+el.getAttribute("data-e")].sets[+el.getAttribute("data-s")].w = el.value; saveRunner(); }); });
     body.querySelectorAll(".wt-run-r").forEach(function (el) { el.addEventListener("input", function () { runnerState.exercises[+el.getAttribute("data-e")].sets[+el.getAttribute("data-s")].r = el.value; saveRunner(); }); });
+    body.querySelectorAll(".wt-run-st").forEach(function (el) {
+      el.addEventListener("click", function () {
+        var ex = runnerState.exercises[+el.getAttribute("data-e")], si = +el.getAttribute("data-s");
+        var s = ex.sets[si], hint = hintFor(ex);
+        var base = parseFloat(s.w);
+        if (!base && base !== 0) base = hint ? hint.w : 0;
+        var next = Math.max(0, Math.round((base + parseFloat(el.getAttribute("data-d"))) * 4) / 4);
+        s.w = String(next); saveRunner();
+        var input = body.querySelector('.wt-run-w[data-e="' + el.getAttribute("data-e") + '"][data-s="' + si + '"]');
+        if (input) input.value = s.w;
+      });
+    });
     body.querySelectorAll(".wt-run-done").forEach(function (el) {
       el.addEventListener("click", function () {
-        var s = runnerState.exercises[+el.getAttribute("data-e")].sets[+el.getAttribute("data-s")];
-        s.done = !s.done; saveRunner();
+        var ei = +el.getAttribute("data-e"), si = +el.getAttribute("data-s");
+        var ex = runnerState.exercises[ei], s = ex.sets[si];
+        s.done = !s.done;
+        if (s.done) autofillSet(ex, si);
+        saveRunner();
         el.classList.toggle("on", s.done);
+        var row = el.closest(".wt-run-set");
+        if (row) {
+          row.classList.toggle("done", s.done);
+          var wIn = row.querySelector(".wt-run-w"), rIn = row.querySelector(".wt-run-r");
+          if (wIn) wIn.value = s.w; if (rIn) rIn.value = s.r;
+        }
         updateRunnerProgress();
         if (s.done) { timerOv.classList.add("open"); startTimer(getRestSec()); }
       });
@@ -2035,7 +2086,7 @@ react/cjs/react-jsx-runtime.production.js:
         '</div>' +
         '<a class="wt-btn" href="index.html" style="text-decoration:none">⌂ חזרה לכל האפליקציות</a>' +
         '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">' +
-        '<div class="wt-ver">מהדורה 25.06 · v35 (חוויית אימון משודרגת)</div>' +
+        '<div class="wt-ver">מהדורה 25.06 · v36 (אימון חכם ומהיר)</div>' +
       '</div>';
 
     /* Rest timer overlay */
@@ -2477,7 +2528,7 @@ react/cjs/react-jsx-runtime.production.js:
      triggers one automatic cache-busting reload, or a tap-to-refresh pill when
      a workout is running. APP_VER must be bumped together with version.txt and
      the wt-ver stamp on every deploy. */
-  var APP_VER = 35;
+  var APP_VER = 36;
   function bustReload() { location.replace(location.pathname + "?u=" + Date.now()); }
   function showUpdateBanner() {
     if (document.getElementById("wt-update")) return;
