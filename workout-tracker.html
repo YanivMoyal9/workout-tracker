@@ -194,8 +194,23 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; }
   .wt-runner-body { width: 100%; max-width: 460px; padding: 0 14px calc(40px + env(safe-area-inset-bottom));
     box-sizing: border-box; display: flex; flex-direction: column; gap: 14px; }
-  .wt-run-ex { background: rgba(255,255,255,.7); border-radius: 14px; padding: 11px; }
+  .wt-runbar { width: 100%; max-width: 460px; height: 4px; background: rgba(0,0,0,.08);
+    border-radius: 2px; overflow: hidden; flex: 0 0 auto; }
+  html.wt-dark .wt-runbar { background: rgba(255,255,255,.10); }
+  #wt-runbar-fill { display: block; height: 100%; width: 0; background: #2F7A3D;
+    border-radius: 2px; transition: width .35s ease; }
+  .wt-run-ex { background: rgba(255,255,255,.7); border-radius: 14px; padding: 11px;
+    transition: opacity .3s ease, box-shadow .3s ease; }
   html.wt-dark .wt-run-ex { background: rgba(255,255,255,.06); }
+  .wt-run-ex.complete { opacity: .68; box-shadow: inset 3px 0 0 #2F7A3D; }
+  .wt-run-chip { font-size: 11.5px; font-weight: 800; color: #7C7F85; background: rgba(0,0,0,.06);
+    padding: 3px 9px; border-radius: 999px; flex: 0 0 auto; align-self: flex-start;
+    transition: background .25s ease, color .25s ease; }
+  html.wt-dark .wt-run-chip { background: rgba(255,255,255,.10); }
+  .wt-run-chip.done { background: #2F7A3D; color: #fff; }
+  .wt-run-hint { font-size: 12px; color: #2F7A3D; font-weight: 700; margin-top: 2px; }
+  .wt-run-done { transition: transform .12s ease, background .2s ease, color .2s ease; }
+  .wt-run-done:active { transform: scale(.88); }
   .wt-run-exh { display: flex; gap: 10px; cursor: pointer; margin-bottom: 8px; }
   .wt-run-exh .wt-eq-img { width: 60px; height: 60px; flex: 0 0 auto; }
   .wt-run-exinfo { flex: 1; min-width: 0; }
@@ -1591,6 +1606,30 @@ react/cjs/react-jsx-runtime.production.js:
   var runnerState = null;
   function loadRunner() { try { return JSON.parse(localStorage.getItem("wt-runner-active") || "null"); } catch (e) { return null; } }
   function saveRunner() { if (runnerState) localStorage.setItem("wt-runner-active", JSON.stringify(runnerState)); else localStorage.removeItem("wt-runner-active"); }
+  /* "Last time" hints: what the user lifted for this exercise in the previous
+     workout — from finished runner sessions and from the core A/B history. */
+  function runnerHints() { try { return JSON.parse(localStorage.getItem("wt-runner-hints") || "{}"); } catch (e) { return {}; } }
+  function hintKey(ex) { return ex.ex_id || (ex.machine_id ? "m:" + ex.machine_id : ex.name); }
+  function coreLastFor(exId) {
+    if (!exId) return null;
+    try {
+      var st = JSON.parse(localStorage.getItem("gym-tracker-v2") || "null");
+      var logs = (st && st.logs) || [];
+      for (var i = logs.length - 1; i >= 0; i--) {
+        var sets = logs[i].prog && logs[i].prog[exId];
+        if (sets && sets.length) {
+          var s = sets[sets.length - 1];
+          if (parseFloat(s.w)) return { w: parseFloat(s.w), r: parseFloat(s.r) || 0 };
+        }
+      }
+    } catch (e) {}
+    return null;
+  }
+  function hintFor(ex) {
+    var h = runnerHints()[hintKey(ex)];
+    if (h && parseFloat(h.w)) return { w: parseFloat(h.w), r: parseFloat(h.r) || 0 };
+    return coreLastFor(ex.ex_id);
+  }
   function startRunner(prog) {
     var active = loadRunner();
     if (active && active.programId === prog.id) runnerState = active;
@@ -1608,25 +1647,41 @@ react/cjs/react-jsx-runtime.production.js:
     document.getElementById("wt-runner").classList.add("open");
     renderRunner();
   }
+  function updateRunnerProgress() {
+    if (!runnerState) return;
+    var tot = 0, dn = 0;
+    runnerState.exercises.forEach(function (ex, ei) {
+      var t = ex.sets.length, d = ex.sets.filter(function (s) { return s.done; }).length;
+      tot += t; dn += d;
+      var chip = document.querySelector('.wt-run-chip[data-chip="' + ei + '"]');
+      if (chip) { chip.textContent = d + "/" + t; chip.classList.toggle("done", t > 0 && d === t); }
+      var card = document.querySelector('.wt-run-ex[data-ex="' + ei + '"]');
+      if (card) card.classList.toggle("complete", t > 0 && d === t);
+    });
+    var pr = document.getElementById("wt-runner-prog");
+    if (pr) pr.textContent = dn + "/" + tot + " סטים";
+    var fill = document.getElementById("wt-runbar-fill");
+    if (fill) fill.style.width = (tot ? Math.round(dn / tot * 100) : 0) + "%";
+  }
   function renderRunner() {
     var body = document.getElementById("wt-runner-body");
     if (!body || !runnerState) return;
-    var total = 0, done = 0;
-    runnerState.exercises.forEach(function (ex) { ex.sets.forEach(function (s) { total++; if (s.done) done++; }); });
-    document.getElementById("wt-runner-prog").textContent = done + "/" + total + " סטים";
     document.getElementById("wt-runner-title").textContent = "▶️ " + runnerState.name;
     body.innerHTML = runnerState.exercises.map(function (ex, ei) {
       var img = ex.image ? '<img class="wt-eq-img" src="' + esc(ex.image) + '" alt="">' : '<div class="wt-eq-img wt-eq-noimg">🏋️</div>';
+      var hint = hintFor(ex);
       var rows = ex.sets.map(function (s, si) {
         return '<div class="wt-run-set"><span class="wt-run-sn">' + (si + 1) + '</span>' +
-          '<input class="wt-run-w" data-e="' + ei + '" data-s="' + si + '" type="number" inputmode="decimal" value="' + esc(s.w) + '" placeholder="ק״ג">' +
+          '<input class="wt-run-w" data-e="' + ei + '" data-s="' + si + '" type="number" inputmode="decimal" value="' + esc(s.w) + '" placeholder="' + (hint ? esc(hint.w) : "ק״ג") + '">' +
           '<input class="wt-run-r" data-e="' + ei + '" data-s="' + si + '" type="number" inputmode="numeric" value="' + esc(s.r) + '" placeholder="' + esc(ex.reps || "חזרות") + '">' +
-          '<button class="wt-run-done' + (s.done ? " on" : "") + '" data-e="' + ei + '" data-s="' + si + '">✓</button></div>';
+          '<button class="wt-run-done' + (s.done ? " on" : "") + '" data-e="' + ei + '" data-s="' + si + '" aria-label="סיימתי סט">✓</button></div>';
       }).join("");
-      return '<div class="wt-run-ex"><div class="wt-run-exh" data-open="' + esc(ex.machine_id) + '">' + img +
+      return '<div class="wt-run-ex" data-ex="' + ei + '"><div class="wt-run-exh" data-open="' + esc(ex.machine_id) + '">' + img +
         '<div class="wt-run-exinfo"><div class="wt-eq-name">' + (ei + 1) + ". " + esc(ex.name) + '</div>' +
         (ex.category ? '<div class="wt-eq-notes">' + esc(ex.category) + (ex.reps ? " · יעד " + esc(ex.reps) : "") + '</div>' : "") +
-        (ex.settings ? '<div class="wt-eq-set">⚙️ ' + esc(ex.settings) + '</div>' : "") + '</div></div>' +
+        (hint ? '<div class="wt-run-hint">📈 אימון קודם: ' + esc(hint.w) + ' ק״ג' + (hint.r ? " × " + esc(hint.r) : "") + '</div>' : "") +
+        (ex.settings ? '<div class="wt-eq-set">⚙️ ' + esc(ex.settings) + '</div>' : "") + '</div>' +
+        '<span class="wt-run-chip" data-chip="' + ei + '">0/' + ex.sets.length + '</span></div>' +
         '<div class="wt-run-sets">' + rows + '</div></div>';
     }).join("");
     body.querySelectorAll(".wt-run-w").forEach(function (el) { el.addEventListener("input", function () { runnerState.exercises[+el.getAttribute("data-e")].sets[+el.getAttribute("data-s")].w = el.value; saveRunner(); }); });
@@ -1636,12 +1691,12 @@ react/cjs/react-jsx-runtime.production.js:
         var s = runnerState.exercises[+el.getAttribute("data-e")].sets[+el.getAttribute("data-s")];
         s.done = !s.done; saveRunner();
         el.classList.toggle("on", s.done);
-        var tot = 0, dn = 0; runnerState.exercises.forEach(function (ex) { ex.sets.forEach(function (x) { tot++; if (x.done) dn++; }); });
-        document.getElementById("wt-runner-prog").textContent = dn + "/" + tot + " סטים";
+        updateRunnerProgress();
         if (s.done) { timerOv.classList.add("open"); startTimer(getRestSec()); }
       });
     });
     body.querySelectorAll(".wt-run-exh").forEach(function (h) { h.addEventListener("click", function () { var m = machineById(h.getAttribute("data-open")); if (m) openSingleMachine(m); }); });
+    updateRunnerProgress();
   }
   function finishRunner() {
     if (!runnerState) return;
@@ -1682,6 +1737,15 @@ react/cjs/react-jsx-runtime.production.js:
         }
       } catch (e) {}
     }
+    // Remember the last weight per exercise for next time's "אימון קודם" hints
+    try {
+      var hints = runnerHints();
+      runnerState.exercises.forEach(function (ex) {
+        var last = ex.sets.filter(function (s) { return s.done && parseFloat(s.w); }).pop();
+        if (last) hints[hintKey(ex)] = { w: parseFloat(last.w), r: parseFloat(last.r) || 0 };
+      });
+      localStorage.setItem("wt-runner-hints", JSON.stringify(hints));
+    } catch (e) {}
     runnerState = null; saveRunner();
     document.getElementById("wt-runner").classList.remove("open");
     showCelebration("💪 אימון הושלם!", done + " סטים · נפח " + Math.round(volume) + " ק״ג");
@@ -1971,7 +2035,7 @@ react/cjs/react-jsx-runtime.production.js:
         '</div>' +
         '<a class="wt-btn" href="index.html" style="text-decoration:none">⌂ חזרה לכל האפליקציות</a>' +
         '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">' +
-        '<div class="wt-ver">מהדורה 25.06 · v34 (טיימר מעל אימון)</div>' +
+        '<div class="wt-ver">מהדורה 25.06 · v35 (חוויית אימון משודרגת)</div>' +
       '</div>';
 
     /* Rest timer overlay */
@@ -2125,6 +2189,7 @@ react/cjs/react-jsx-runtime.production.js:
       '<div class="wt-runner-top"><button class="wt-chip" id="wt-runner-close">✕ סגור</button>' +
       '<span id="wt-runner-prog" class="wt-runner-prog"></span>' +
       '<button class="wt-chip primary" id="wt-runner-finish">סיים אימון</button></div>' +
+      '<div class="wt-runbar"><i id="wt-runbar-fill"></i></div>' +
       '<h2 id="wt-runner-title">▶️ אימון</h2>' +
       '<div class="wt-runner-body" id="wt-runner-body"></div>';
 
@@ -2412,7 +2477,7 @@ react/cjs/react-jsx-runtime.production.js:
      triggers one automatic cache-busting reload, or a tap-to-refresh pill when
      a workout is running. APP_VER must be bumped together with version.txt and
      the wt-ver stamp on every deploy. */
-  var APP_VER = 34;
+  var APP_VER = 35;
   function bustReload() { location.replace(location.pathname + "?u=" + Date.now()); }
   function showUpdateBanner() {
     if (document.getElementById("wt-update")) return;
