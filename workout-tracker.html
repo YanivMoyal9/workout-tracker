@@ -237,6 +237,25 @@
   .wt-sum-row b { white-space: nowrap; }
   .wt-sum-row small { color: #8A8D93; font-weight: 500; }
   #wt-sum-close { width: 100%; margin-top: 14px; padding: 13px; }
+  #wt-sum-share { width: 100%; margin-top: 8px; padding: 12px; }
+  /* Weekly goal chip on home */
+  .wt-week-goal { text-align: center; font-size: 12.5px; font-weight: 700; color: #6F7277;
+    background: rgba(0,0,0,.05); border-radius: 999px; padding: 5px 14px; margin-top: -4px; }
+  .wt-week-goal.hit { color: #2F7A3D; background: rgba(47,122,61,.10); }
+  /* Exercise progress sparkline */
+  .wt-run-hint.link { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+  .wt-chart { background: rgba(0,0,0,.03); border-radius: 14px; padding: 8px 4px 2px; }
+  html.wt-dark .wt-chart { background: rgba(255,255,255,.05); }
+  .wt-ch-line { fill: none; stroke: #2F7A3D; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .wt-ch-dot { fill: #2F7A3D; stroke: #FBFAF8; stroke-width: 2; }
+  html.wt-dark .wt-ch-line { stroke: #6AA84F; }
+  html.wt-dark .wt-ch-dot { fill: #6AA84F; stroke: #232427; }
+  .wt-ch-grid { stroke: rgba(0,0,0,.10); stroke-width: 1; stroke-dasharray: 3 4; }
+  html.wt-dark .wt-ch-grid { stroke: rgba(255,255,255,.14); }
+  .wt-ch-lbl { font-size: 10px; fill: #8A8D93; font-family: system-ui, sans-serif; }
+  .wt-ch-val { font-size: 12px; font-weight: 800; fill: #2F3033; font-family: system-ui, sans-serif; }
+  html.wt-dark .wt-ch-val { fill: #E9E9EC; }
+  .wt-ch-sub { font-size: 12px; color: #8A8D93; margin: 2px 0 8px; text-align: center; }
   .wt-run-chip { font-size: 11.5px; font-weight: 800; color: #7C7F85; background: rgba(0,0,0,.06);
     padding: 3px 9px; border-radius: 999px; flex: 0 0 auto; align-self: flex-start;
     transition: background .25s ease, color .25s ease; }
@@ -1664,6 +1683,61 @@ react/cjs/react-jsx-runtime.production.js:
     if (h && parseFloat(h.w)) return { w: parseFloat(h.w), r: parseFloat(h.r) || 0 };
     return coreLastFor(ex.ex_id);
   }
+  /* Weight-over-time history for one exercise (top weight per workout). */
+  function exHistory(exId, limit) {
+    var out = [];
+    if (!exId) return out;
+    try {
+      var st = JSON.parse(localStorage.getItem("gym-tracker-v2") || "null");
+      ((st && st.logs) || []).forEach(function (l) {
+        var sets = l.prog && l.prog[exId];
+        if (!sets || !sets.length) return;
+        var w = 0;
+        sets.forEach(function (s) { var x = parseFloat(s.w) || 0; if (x > w) w = x; });
+        if (w) out.push({ date: new Date(l.date), w: w });
+      });
+    } catch (e) {}
+    out.sort(function (a, b) { return a.date - b.date; });
+    return out.slice(-(limit || 12));
+  }
+  /* Single-series sparkline: 2px line, dots ringed by the surface, value label
+     on the last point only, recessive dashed min/max gridlines, LTR time axis. */
+  function chartSvg(hist) {
+    var W = 320, H = 150, P = { t: 20, r: 16, b: 26, l: 36 };
+    var ws = hist.map(function (p) { return p.w; });
+    var mn = Math.min.apply(null, ws), mx = Math.max.apply(null, ws);
+    if (mn === mx) { mn -= 2.5; mx += 2.5; }
+    var iw = W - P.l - P.r, ih = H - P.t - P.b;
+    function x(i) { return P.l + (hist.length === 1 ? iw / 2 : i * iw / (hist.length - 1)); }
+    function y(w) { return P.t + (mx - w) / (mx - mn) * ih; }
+    function dstr(d) { return d.getDate() + "." + (d.getMonth() + 1); }
+    var pts = hist.map(function (p, i) { return x(i).toFixed(1) + "," + y(p.w).toFixed(1); }).join(" ");
+    var dots = hist.map(function (p, i) {
+      var last = i === hist.length - 1;
+      return '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(p.w).toFixed(1) + '" r="' + (last ? 5 : 3.5) + '" class="wt-ch-dot"/>';
+    }).join("");
+    var lastP = hist[hist.length - 1];
+    return '<div class="wt-chart" dir="ltr"><svg viewBox="0 0 ' + W + " " + H + '" width="100%" role="img" aria-label="גרף משקל">' +
+      '<line x1="' + P.l + '" y1="' + y(mx).toFixed(1) + '" x2="' + (W - P.r) + '" y2="' + y(mx).toFixed(1) + '" class="wt-ch-grid"/>' +
+      '<line x1="' + P.l + '" y1="' + y(mn).toFixed(1) + '" x2="' + (W - P.r) + '" y2="' + y(mn).toFixed(1) + '" class="wt-ch-grid"/>' +
+      '<text x="' + (P.l - 6) + '" y="' + (y(mx) + 4).toFixed(1) + '" class="wt-ch-lbl" text-anchor="end">' + mx + '</text>' +
+      '<text x="' + (P.l - 6) + '" y="' + (y(mn) + 4).toFixed(1) + '" class="wt-ch-lbl" text-anchor="end">' + mn + '</text>' +
+      '<polyline points="' + pts + '" class="wt-ch-line"/>' + dots +
+      '<text x="' + x(hist.length - 1).toFixed(1) + '" y="' + (y(lastP.w) - 11).toFixed(1) + '" class="wt-ch-val" text-anchor="middle">' + lastP.w + '</text>' +
+      '<text x="' + P.l + '" y="' + (H - 6) + '" class="wt-ch-lbl" text-anchor="start">' + dstr(hist[0].date) + '</text>' +
+      '<text x="' + (W - P.r) + '" y="' + (H - 6) + '" class="wt-ch-lbl" text-anchor="end">' + dstr(lastP.date) + '</text>' +
+      '</svg></div>';
+  }
+  function openExChart(ex) {
+    var hist = exHistory(ex.ex_id, 12);
+    if (hist.length < 2) { toast("אין עדיין מספיק היסטוריה לגרף 📈"); return; }
+    var pop = document.getElementById("wt-mpop");
+    if (!pop) return;
+    pop.querySelector("#wt-mpop-title").textContent = "📈 " + (ex.name || "");
+    pop.querySelector("#wt-mpop-body").innerHTML =
+      '<div class="wt-ch-sub">משקל שיא לאימון · ' + hist.length + ' אימונים אחרונים</div>' + chartSvg(hist);
+    pop.classList.add("open");
+  }
   function startRunner(prog) {
     var active = loadRunner();
     if (active && active.programId === prog.id) runnerState = active;
@@ -1752,7 +1826,7 @@ react/cjs/react-jsx-runtime.production.js:
       return '<div class="wt-run-ex" data-ex="' + ei + '"><div class="wt-run-exh" data-open="' + esc(ex.machine_id) + '">' + img +
         '<div class="wt-run-exinfo"><div class="wt-eq-name">' + (ei + 1) + ". " + esc(ex.name) + '</div>' +
         (ex.category ? '<div class="wt-eq-notes">' + esc(ex.category) + (ex.reps ? " · יעד " + esc(ex.reps) : "") + '</div>' : "") +
-        (hint ? '<div class="wt-run-hint">📈 אימון קודם: ' + esc(hint.w) + ' ק״ג' + (hint.r ? " × " + esc(hint.r) : "") + '<span class="wt-run-delta" data-delta="' + ei + '"></span></div>' : "") +
+        (hint ? '<div class="wt-run-hint' + (ex.ex_id ? " link" : "") + '" data-hint="' + ei + '">📈 אימון קודם: ' + esc(hint.w) + ' ק״ג' + (hint.r ? " × " + esc(hint.r) : "") + '<span class="wt-run-delta" data-delta="' + ei + '"></span></div>' : "") +
         (ex.settings ? '<div class="wt-eq-set">⚙️ ' + esc(ex.settings) + '</div>' : "") + '</div>' +
         '<span class="wt-run-chip" data-chip="' + ei + '">0/' + ex.sets.length + '</span></div>' +
         '<div class="wt-run-sets">' + rows + '</div></div>';
@@ -1795,6 +1869,12 @@ react/cjs/react-jsx-runtime.production.js:
       });
     });
     body.querySelectorAll(".wt-run-exh").forEach(function (h) { h.addEventListener("click", function () { var m = machineById(h.getAttribute("data-open")); if (m) openSingleMachine(m); }); });
+    body.querySelectorAll(".wt-run-hint.link").forEach(function (el) {
+      el.addEventListener("click", function (e) {
+        e.stopPropagation();
+        openExChart(runnerState.exercises[+el.getAttribute("data-hint")]);
+      });
+    });
     updateRunnerProgress();
     updateRunnerDeltas();
   }
@@ -1840,7 +1920,7 @@ react/cjs/react-jsx-runtime.production.js:
     // Build the summary against the OLD hints (before overwriting them),
     // so beating last time's weight is detected as a new record.
     var mins = Math.max(1, Math.round((Date.now() - (runnerState.startedAt || Date.now())) / 60000));
-    var sumRows = [], sumRecords = [];
+    var name_ = runnerState.name, sumRows = [], sumRecords = [];
     runnerState.exercises.forEach(function (ex) {
       var doneSets = ex.sets.filter(function (s) { return s.done; });
       if (!doneSets.length) return;
@@ -1862,7 +1942,7 @@ react/cjs/react-jsx-runtime.production.js:
     } catch (e) {}
     runnerState = null; saveRunner();
     document.getElementById("wt-runner").classList.remove("open");
-    showSummary({ volume: Math.round(volume), done: done, mins: mins, rows: sumRows, records: sumRecords, reload: wroteCoreLog });
+    showSummary({ name: name_, volume: Math.round(volume), done: done, mins: mins, rows: sumRows, records: sumRecords, reload: wroteCoreLog });
   }
   /* End-of-workout summary: totals, new records, best set per exercise. */
   function showSummary(sum) {
@@ -1888,12 +1968,74 @@ react/cjs/react-jsx-runtime.production.js:
         '<div><b>' + sum.mins + '</b><span>דקות</span></div></div>' +
       (recRows ? '<div class="wt-sum-sec">🏆 שיאים חדשים</div>' + recRows : "") +
       (exRows ? '<div class="wt-sum-sec">הסטים הטובים שלך</div>' + exRows : '<div class="wt-empty">לא סומנו סטים</div>') +
-      '<button class="wt-chip primary" id="wt-sum-close">מעולה! 🎉</button></div>';
+      '<button class="wt-chip primary" id="wt-sum-close">מעולה! 🎉</button>' +
+      '<button class="wt-chip" id="wt-sum-share">📤 שתף תמונה</button></div>';
     el.classList.add("open");
     document.getElementById("wt-sum-close").addEventListener("click", function () {
       el.classList.remove("open");
       if (sum.reload) location.reload();
     });
+    document.getElementById("wt-sum-share").addEventListener("click", function () { shareSummary(sum); });
+  }
+  /* Render the summary to a canvas image and hand it to the share sheet
+     (falls back to a download where Web Share can't send files). */
+  function shareSummary(sum) {
+    var recs = sum.records.slice(0, 4), rows = sum.rows.slice(0, 8);
+    var W = 720, H = 330 + recs.length * 54 + rows.length * 50 + 70;
+    var cv = document.createElement("canvas");
+    cv.width = W; cv.height = H;
+    var ctx = cv.getContext("2d");
+    function rr(x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+    }
+    ctx.fillStyle = "#E7E5E0"; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "#FFFFFF"; rr(24, 24, W - 48, H - 48, 26); ctx.fill();
+    ctx.direction = "rtl"; ctx.textAlign = "center"; ctx.fillStyle = "#191A1C";
+    ctx.font = "56px system-ui"; ctx.fillText("💪", W / 2, 105);
+    ctx.font = "800 34px system-ui"; ctx.fillText("אימון הושלם!", W / 2, 152);
+    ctx.font = "500 17px system-ui"; ctx.fillStyle = "#7C7F85";
+    ctx.fillText(new Date().toLocaleDateString("he-IL") + " · " + (sum.name || "אימון"), W / 2, 180);
+    var bw = (W - 48 - 40 - 24) / 3, by = 204;
+    [[sum.volume.toLocaleString(), 'ק״ג נפח'], [String(sum.done), "סטים"], [String(sum.mins), "דקות"]].forEach(function (s, i) {
+      var bx = 44 + i * (bw + 12);
+      ctx.fillStyle = "rgba(47,122,61,.09)"; rr(bx, by, bw, 78, 16); ctx.fill();
+      ctx.fillStyle = "#191A1C"; ctx.font = "800 30px system-ui"; ctx.fillText(s[0], bx + bw / 2, by + 40);
+      ctx.fillStyle = "#7C7F85"; ctx.font = "500 15px system-ui"; ctx.fillText(s[1], bx + bw / 2, by + 65);
+    });
+    var yy = by + 78 + 34;
+    ctx.textAlign = "right";
+    recs.forEach(function (r) {
+      ctx.fillStyle = "rgba(212,160,23,.16)"; rr(44, yy - 30, W - 88, 44, 12); ctx.fill();
+      ctx.fillStyle = "#191A1C"; ctx.font = "700 19px system-ui";
+      ctx.fillText("🏆 שיא חדש · " + r.name + ": " + r.w + ' ק״ג (קודם ' + r.prev + ")", W - 62, yy);
+      yy += 54;
+    });
+    rows.forEach(function (x) {
+      ctx.fillStyle = "rgba(0,0,0,.04)"; rr(44, yy - 28, W - 88, 40, 12); ctx.fill();
+      ctx.fillStyle = "#191A1C"; ctx.font = "600 17px system-ui";
+      ctx.fillText(x.name, W - 62, yy);
+      ctx.textAlign = "left"; ctx.fillStyle = "#2F7A3D";
+      ctx.fillText((x.w ? x.w + ' ק״ג × ' + (x.r || "?") : x.d + " סטים"), 62, yy);
+      ctx.textAlign = "right";
+      yy += 50;
+    });
+    ctx.textAlign = "center"; ctx.fillStyle = "#A7A9AD"; ctx.font = "500 14px system-ui";
+    ctx.fillText("מערכת אימון A/B 🏋️", W / 2, H - 44);
+    cv.toBlob(function (blob) {
+      if (!blob) return;
+      var file = new File([blob], "workout.png", { type: "image/png" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        navigator.share({ files: [file], title: "האימון שלי" }).catch(function () {});
+      } else {
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "workout.png";
+        a.click();
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 3000);
+      }
+    }, "image/png");
   }
 
   /* ---------- Rest timer (independent, full-screen) ---------- */
@@ -2102,6 +2244,42 @@ react/cjs/react-jsx-runtime.production.js:
     note.__sig = txt;
     note.textContent = txt;
   }
+  /* Weekly goal chip on the home screen: distinct workout days this week
+     (Sunday-based, as in Israel) against a 3-workout target. */
+  function weekWorkoutDays() {
+    try {
+      var st = JSON.parse(localStorage.getItem("gym-tracker-v2") || "null");
+      var logs = (st && st.logs) || [];
+      var now = new Date();
+      var sunday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay());
+      var days = {};
+      logs.forEach(function (l) {
+        var d = new Date(l.date);
+        if (!isNaN(d) && d >= sunday) days[d.toDateString()] = 1;
+      });
+      return Object.keys(days).length;
+    } catch (e) { return 0; }
+  }
+  function injectWeeklyGoal() {
+    var hit = homeStartButton();
+    if (!hit) return;
+    var target = 3, n = weekWorkoutDays();
+    var marks = "";
+    for (var i = 0; i < target; i++) marks += i < n ? "✅" : "⬜";
+    var txt = "יעד שבועי " + marks + " " + n + "/" + target + (n >= target ? " 🎉" : "");
+    var host = hit.btn.parentNode;
+    var el = host.querySelector(".wt-week-goal");
+    if (el && el.__sig === txt) return;
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "wt-week-goal";
+      var note = host.querySelector(".wt-home-note");
+      host.insertBefore(el, (note || hit.btn).nextSibling);
+    }
+    el.__sig = txt;
+    el.textContent = txt;
+    el.classList.toggle("hit", n >= target);
+  }
   function installHomeStartHijack() {
     document.addEventListener("click", function (e) {
       var btn = e.target.closest ? e.target.closest("#root button") : null;
@@ -2128,7 +2306,7 @@ react/cjs/react-jsx-runtime.production.js:
   }
   function scheduleRefresh() {
     clearTimeout(navHookT);
-    navHookT = setTimeout(function () { ensureToolsTab(); refreshActiveTab(); injectWorkoutOverlays(); injectHomeStartBadge(); }, 40);
+    navHookT = setTimeout(function () { ensureToolsTab(); refreshActiveTab(); injectWorkoutOverlays(); injectHomeStartBadge(); injectWeeklyGoal(); }, 40);
   }
   function installNavHook() {
     var root = document.getElementById("root");
@@ -2179,7 +2357,7 @@ react/cjs/react-jsx-runtime.production.js:
         '</div>' +
         '<a class="wt-btn" href="index.html" style="text-decoration:none">⌂ חזרה לכל האפליקציות</a>' +
         '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">' +
-        '<div class="wt-ver">מהדורה 25.06 · v37 (סיכום אימון ושיאים)</div>' +
+        '<div class="wt-ver">מהדורה 25.06 · v38 (גרפים, יעד שבועי ושיתוף)</div>' +
       '</div>';
 
     /* Rest timer overlay */
@@ -2621,7 +2799,7 @@ react/cjs/react-jsx-runtime.production.js:
      triggers one automatic cache-busting reload, or a tap-to-refresh pill when
      a workout is running. APP_VER must be bumped together with version.txt and
      the wt-ver stamp on every deploy. */
-  var APP_VER = 37;
+  var APP_VER = 38;
   function bustReload() { location.replace(location.pathname + "?u=" + Date.now()); }
   function showUpdateBanner() {
     if (document.getElementById("wt-update")) return;
