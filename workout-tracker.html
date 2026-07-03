@@ -247,6 +247,10 @@
   .wt-winject { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 2px; }
   .wt-home-note { text-align: center; font-size: 12.5px; font-weight: 700; color: #2F7A3D;
     background: rgba(47,122,61,.10); border-radius: 999px; padding: 5px 14px; margin-top: -6px; }
+  #wt-update { position: fixed; bottom: calc(84px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%);
+    z-index: 100004; border: none; border-radius: 999px; padding: 11px 20px; background: #2F7A3D; color: #fff;
+    font-size: 14px; font-weight: 700; font-family: system-ui, sans-serif; box-shadow: 0 6px 18px rgba(0,0,0,.28);
+    cursor: pointer; white-space: nowrap; animation: wt-fade .3s ease; }
   .wt-sub-banner { display: inline-flex; align-items: center; font-size: 12.5px; font-weight: 700;
     color: #B45309; background: rgba(217,119,6,.13); padding: 4px 11px; border-radius: 999px; }
   .wt-sub-banner.skip { color: #6F7277; background: rgba(124,127,133,.15); text-decoration: line-through; }
@@ -1965,7 +1969,7 @@ react/cjs/react-jsx-runtime.production.js:
         '</div>' +
         '<a class="wt-btn" href="index.html" style="text-decoration:none">⌂ חזרה לכל האפליקציות</a>' +
         '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">' +
-        '<div class="wt-ver">מהדורה 25.06 · v32 (מותאם מובייל)</div>' +
+        '<div class="wt-ver">מהדורה 25.06 · v33 (עדכון אוטומטי)</div>' +
       '</div>';
 
     /* Rest timer overlay */
@@ -2392,12 +2396,56 @@ react/cjs/react-jsx-runtime.production.js:
     /* Warm the programs cache so the home A/B buttons know about edited copies,
        and run the edited copy when its home start button is tapped */
     warmProgramsCache();
-    document.addEventListener("visibilitychange", function () { if (!document.hidden) warmProgramsCache(); });
+    document.addEventListener("visibilitychange", function () { if (!document.hidden) { warmProgramsCache(); checkForUpdate(); } });
     installHomeStartHijack();
 
     /* Keep the modern bottom-nav active tab highlighted */
     installNavHook();
   }
+
+  /* ---------- Auto-update ----------
+     GitHub Pages' CDN caches the HTML for ~10 minutes and Safari adds its own
+     cache, so deploys reached the phone late and only after several manual
+     refreshes. The app now polls version.txt (cache-bypassed): a newer version
+     triggers one automatic cache-busting reload, or a tap-to-refresh pill when
+     a workout is running. APP_VER must be bumped together with version.txt and
+     the wt-ver stamp on every deploy. */
+  var APP_VER = 33;
+  function bustReload() { location.replace(location.pathname + "?u=" + Date.now()); }
+  function showUpdateBanner() {
+    if (document.getElementById("wt-update")) return;
+    var b = document.createElement("button");
+    b.id = "wt-update";
+    b.textContent = "🔄 עדכון זמין — הקש לרענון";
+    b.addEventListener("click", bustReload);
+    document.body.appendChild(b);
+  }
+  var updT = 0;
+  function checkForUpdate() {
+    if (location.protocol !== "http:" && location.protocol !== "https:") return;
+    var now = Date.now();
+    if (now - updT < 60000) return;
+    updT = now;
+    fetch("version.txt?ts=" + now, { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.text() : ""; })
+      .then(function (t) {
+        var v = parseInt(t, 10) || 0;
+        if (v <= APP_VER) return;
+        var sess = localStorage.getItem("gym-tracker-session");
+        var busy = !!runnerState || !!(sess && sess !== "null");
+        var tried = 0;
+        try { tried = (JSON.parse(localStorage.getItem("wt-update-try") || "{}"))[v] || 0; } catch (e) {}
+        // One silent reload attempt per version; if the CDN still serves the old
+        // file (or a workout is running) fall back to the tap-to-refresh pill.
+        if (busy || now - tried < 600000) { showUpdateBanner(); return; }
+        try { var m = {}; m[v] = now; localStorage.setItem("wt-update-try", JSON.stringify(m)); } catch (e) {}
+        bustReload();
+      }).catch(function () {});
+  }
+  if (location.search.indexOf("u=") !== -1) {
+    try { history.replaceState(null, "", location.pathname); } catch (e) {}
+  }
+  setTimeout(checkForUpdate, 3000);
 
   /* ---------- PWA: installable manifest (no service worker) ----------
      Earlier versions registered a cache-first service worker that pinned a
