@@ -1326,6 +1326,24 @@ react/cjs/react-jsx-runtime.production.js:
     if (!b) return null;
     return cachedPrograms().filter(function (p) { return p.name === b.name && (p.items || []).length; })[0] || null;
   }
+  /* Mirror an edited A/B copy into ex_subs so the CORE workout screen reflects
+     it too: built-in exercises removed from the copy get a "skip" banner, and
+     a previously auto-added skip is cleared when the exercise is restored.
+     Manual "replace" substitutions are never touched. */
+  function syncBuiltinSubs(prog) {
+    var b = BUILTIN_PROGRAMS.filter(function (x) { return x.name === prog.name; })[0];
+    if (!b || !sbConfigured()) return Promise.resolve();
+    var present = {};
+    (prog.items || []).forEach(function (it) { if (it.ex_id) present[it.ex_id] = true; });
+    var ops = [];
+    EX_PROGRAM[b.key].forEach(function (exId) {
+      var s = subsByEx[exId];
+      if (!present[exId]) { if (!s || s.mode !== "replace") ops.push(subsUpsert(exId, "skip", null, null)); }
+      else if (s && s.mode === "skip") ops.push(subsDelete(exId));
+    });
+    if (!ops.length) return Promise.resolve();
+    return Promise.all(ops).then(function () { loadSubsCache(); }).catch(function () {});
+  }
   function programsSave(prog) {
     var c = sbCfg(), base = cleanUrl(c.url);
     function chk(r) { if (!r.ok) return r.text().then(function (t) { throw new Error("HTTP " + r.status); }); }
@@ -1416,9 +1434,12 @@ react/cjs/react-jsx-runtime.production.js:
   }
   function renderProgramEdit(prog) {
     progEditing = { id: prog.id, name: prog.name || "", items: (prog.items || []).slice() };
+    // A/B copies are linked to the home buttons by name — keep the name locked.
+    var isBuiltin = BUILTIN_PROGRAMS.some(function (b) { return b.name === progEditing.name; });
     var c = document.getElementById("wt-programs-body");
     c.innerHTML =
-      '<input id="wt-prog-name" class="wt-eq-input" placeholder="שם התוכנית (למשל: יום דחיפה)" value="' + esc(progEditing.name) + '" autocomplete="off">' +
+      '<input id="wt-prog-name" class="wt-eq-input" placeholder="שם התוכנית (למשל: יום דחיפה)" value="' + esc(progEditing.name) + '" autocomplete="off"' + (isBuiltin ? ' readonly' : '') + '>' +
+      (isBuiltin ? '<div class="wt-wiz-help">🔵 תוכנית זו מקושרת לכפתור במסך הראשי — תרגילים שתסיר יסומנו "מדלג" גם באימון המקורי.</div>' : '') +
       '<select id="wt-prog-add" class="wt-eq-input"><option value="">➕ הוסף מכשיר…</option>' + machineOptions(null) + '</select>' +
       '<div id="wt-prog-items"></div>' +
       '<button class="wt-chip primary" id="wt-prog-save">💾 שמור תוכנית</button>' +
@@ -1437,7 +1458,9 @@ react/cjs/react-jsx-runtime.production.js:
       if (!progEditing.name.trim()) { progStatus("תן שם לתוכנית"); return; }
       if (!progEditing.items.length) { progStatus("הוסף לפחות מכשיר אחד"); return; }
       progStatus("שומר…");
-      programsSave(progEditing).then(openPrograms).catch(function (e) { progStatus("שגיאה: " + e.message); });
+      programsSave(progEditing)
+        .then(function () { return syncBuiltinSubs(progEditing); })
+        .then(openPrograms).catch(function (e) { progStatus("שגיאה: " + e.message); });
     });
     document.getElementById("wt-prog-cancel").addEventListener("click", openPrograms);
     if (progEditing.id) document.getElementById("wt-prog-del").addEventListener("click", function () {
@@ -1826,11 +1849,15 @@ react/cjs/react-jsx-runtime.production.js:
   /* Home start button: when the user saved an edited copy of A/B in
      "My Programs", the colored home button runs that copy instead of the
      built-in program. A note under the button makes this visible. */
+  function startButtonDay(el) {
+    var mt = /התחל אימון\s*([AB])/.exec(el.textContent || "");
+    return mt ? mt[1] : null;
+  }
   function homeStartButton() {
     var btns = document.querySelectorAll("#root button");
     for (var i = 0; i < btns.length; i++) {
-      var mt = /^התחל אימון (A|B)$/.exec((btns[i].textContent || "").trim());
-      if (mt) return { btn: btns[i], day: mt[1] };
+      var day = startButtonDay(btns[i]);
+      if (day) return { btn: btns[i], day: day };
     }
     return null;
   }
@@ -1855,14 +1882,25 @@ react/cjs/react-jsx-runtime.production.js:
     document.addEventListener("click", function (e) {
       var btn = e.target.closest ? e.target.closest("#root button") : null;
       if (!btn) return;
-      var mt = /^התחל אימון (A|B)$/.exec((btn.textContent || "").trim());
-      if (!mt) return;
-      var prog = editedProgramFor(mt[1]);
+      var day = startButtonDay(btn);
+      if (!day) return;
+      var prog = editedProgramFor(day);
       if (!prog) return; // no edited copy — let the built-in workout start
       e.preventDefault(); e.stopPropagation();
       startRunner(prog);
       toast("▶️ מריץ את הגרסה שערכת");
     }, true);
+  }
+  /* Keep the programs cache warm: refetch when it's empty or stale (>60s since
+     last try) so the home hijack works even if the boot fetch was missed. */
+  var progWarmT = 0;
+  function warmProgramsCache() {
+    if (!sbConfigured()) return;
+    var now = Date.now();
+    if (now - progWarmT < 60000 && cachedPrograms().length) return;
+    if (now - progWarmT < 15000) return;
+    progWarmT = now;
+    programsList().catch(function () {});
   }
   function scheduleRefresh() {
     clearTimeout(navHookT);
@@ -1917,7 +1955,7 @@ react/cjs/react-jsx-runtime.production.js:
         '</div>' +
         '<a class="wt-btn" href="index.html" style="text-decoration:none">⌂ חזרה לכל האפליקציות</a>' +
         '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">' +
-        '<div class="wt-ver">מהדורה 25.06 · v30 (A/B מהמסך הראשי)</div>' +
+        '<div class="wt-ver">מהדורה 25.06 · v31 (A/B מסונכרן מלא)</div>' +
       '</div>';
 
     /* Rest timer overlay */
@@ -2343,7 +2381,8 @@ react/cjs/react-jsx-runtime.production.js:
 
     /* Warm the programs cache so the home A/B buttons know about edited copies,
        and run the edited copy when its home start button is tapped */
-    if (sbConfigured()) programsList().catch(function () {});
+    warmProgramsCache();
+    document.addEventListener("visibilitychange", function () { if (!document.hidden) warmProgramsCache(); });
     installHomeStartHijack();
 
     /* Keep the modern bottom-nav active tab highlighted */
