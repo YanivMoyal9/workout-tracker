@@ -238,6 +238,8 @@
     padding: 4px 10px; border-radius: 999px; -webkit-user-select: none; user-select: none; }
   .wt-mchip:active { opacity: .7; }
   .wt-winject { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 2px; }
+  .wt-home-note { text-align: center; font-size: 12.5px; font-weight: 700; color: #2F7A3D;
+    background: rgba(47,122,61,.10); border-radius: 999px; padding: 5px 14px; margin-top: -6px; }
   .wt-sub-banner { display: inline-flex; align-items: center; font-size: 12.5px; font-weight: 700;
     color: #B45309; background: rgba(217,119,6,.13); padding: 4px 11px; border-radius: 999px; }
   .wt-sub-banner.skip { color: #6F7277; background: rgba(124,127,133,.15); text-decoration: line-through; }
@@ -1308,7 +1310,21 @@ react/cjs/react-jsx-runtime.production.js:
   function programsList() {
     var c = sbCfg();
     return fetch(cleanUrl(c.url) + "/rest/v1/programs?owner=eq." + encodeURIComponent(c.code) + "&select=*&order=created_at.desc", { headers: sbHeaders() })
-      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(function (rows) {
+        try { localStorage.setItem("wt-programs-cache", JSON.stringify(rows)); } catch (e) {}
+        scheduleRefresh(); // the home badge may need to appear/update
+        return rows;
+      });
+  }
+  function cachedPrograms() {
+    try { return JSON.parse(localStorage.getItem("wt-programs-cache") || "[]"); } catch (e) { return []; }
+  }
+  // The user's edited copy of built-in day A/B, if one was saved in "My Programs".
+  function editedProgramFor(day) {
+    var b = BUILTIN_PROGRAMS.filter(function (x) { return x.key === day; })[0];
+    if (!b) return null;
+    return cachedPrograms().filter(function (p) { return p.name === b.name && (p.items || []).length; })[0] || null;
   }
   function programsSave(prog) {
     var c = sbCfg(), base = cleanUrl(c.url);
@@ -1541,9 +1557,10 @@ react/cjs/react-jsx-runtime.production.js:
     if (active && active.programId === prog.id) runnerState = active;
     else runnerState = {
       programId: prog.id, name: prog.name, startedAt: Date.now(),
+      day: (BUILTIN_PROGRAMS.filter(function (b) { return b.name === prog.name; })[0] || {}).key || null,
       exercises: (prog.items || []).map(function (it) {
         var m = machineById(it.machine_id) || {}, n = parseInt(it.sets, 10) || 3;
-        return { machine_id: it.machine_id, name: it.name || m.name || "תרגיל", category: it.category || m.category || "", settings: m.settings || "",
+        return { machine_id: it.machine_id, ex_id: it.ex_id || null, name: it.name || m.name || "תרגיל", category: it.category || m.category || "", settings: m.settings || "",
           image: imagesOf(m)[0] || "", reps: it.reps || m.reps || "",
           sets: Array.from({ length: n }, function () { return { w: "", r: "", done: false }; }) };
       })
@@ -1596,9 +1613,40 @@ react/cjs/react-jsx-runtime.production.js:
       fetch(cleanUrl(c.url) + "/rest/v1/program_logs", { method: "POST", headers: Object.assign(sbHeaders(), { Prefer: "return=minimal" }),
         body: JSON.stringify({ owner: c.code, program_id: runnerState.programId, name: runnerState.name, volume: Math.round(volume), sets_done: done, data: runnerState.exercises }) }).catch(function () {});
     }
+    // For an edited A/B run, also write a core-format log so history, records,
+    // streak and "last workout" stay in one timeline. Reload lets React load it.
+    var wroteCoreLog = false;
+    if (runnerState.day) {
+      try {
+        var raw = JSON.parse(localStorage.getItem("gym-tracker-v2") || "null");
+        if (raw && raw.logs) {
+          var progMap = {}, exVol = {}, totalSets = 0;
+          runnerState.exercises.forEach(function (ex) {
+            totalSets += ex.sets.length;
+            if (!ex.ex_id) return; // machines added beyond the core program stay in program_logs only
+            var arr = ex.sets.filter(function (s) { return s.done; }).map(function (s) {
+              return { w: parseFloat(s.w) || 0, r: parseFloat(s.r) || 0, done: true };
+            });
+            if (!arr.length) return;
+            progMap[ex.ex_id] = arr;
+            exVol[ex.ex_id] = Math.round(arr.reduce(function (a, s) { return a + s.w * s.r; }, 0));
+          });
+          if (Object.keys(progMap).length) {
+            raw.logs.push({ id: Date.now(), date: new Date().toISOString(), type: runnerState.day,
+              dur: Math.max(1, Math.round((Date.now() - (runnerState.startedAt || Date.now())) / 60000)),
+              vol: Math.round(volume), sets: done, totalSets: totalSets, prog: progMap, exVol: exVol,
+              warm: null, cardio: null, restReal: 0, restPlan: 0, restTarget: 0, restTotalActual: 0,
+              overSum: 0, savedSum: 0, onTimeCount: 0, measuredCount: 0, adherence: null, density: null, rpe: null });
+            localStorage.setItem("gym-tracker-v2", JSON.stringify(raw));
+            wroteCoreLog = true;
+          }
+        }
+      } catch (e) {}
+    }
     runnerState = null; saveRunner();
     document.getElementById("wt-runner").classList.remove("open");
     showCelebration("💪 אימון הושלם!", done + " סטים · נפח " + Math.round(volume) + " ק״ג");
+    if (wroteCoreLog) setTimeout(function () { location.reload(); }, 2600);
   }
 
   /* ---------- Rest timer (independent, full-screen) ---------- */
@@ -1775,9 +1823,50 @@ react/cjs/react-jsx-runtime.production.js:
     });
     row.appendChild(btn);
   }
+  /* Home start button: when the user saved an edited copy of A/B in
+     "My Programs", the colored home button runs that copy instead of the
+     built-in program. A note under the button makes this visible. */
+  function homeStartButton() {
+    var btns = document.querySelectorAll("#root button");
+    for (var i = 0; i < btns.length; i++) {
+      var mt = /^התחל אימון (A|B)$/.exec((btns[i].textContent || "").trim());
+      if (mt) return { btn: btns[i], day: mt[1] };
+    }
+    return null;
+  }
+  function injectHomeStartBadge() {
+    var hit = homeStartButton();
+    if (!hit) return;
+    var prog = editedProgramFor(hit.day);
+    var sib = hit.btn.nextElementSibling;
+    var note = (sib && sib.classList && sib.classList.contains("wt-home-note")) ? sib : null;
+    if (!prog) { if (note) note.remove(); return; }
+    var txt = "✨ ירוץ עם העריכה שלך · " + prog.items.length + " תרגילים";
+    if (note && note.__sig === txt) return;
+    if (!note) {
+      note = document.createElement("div");
+      note.className = "wt-home-note";
+      hit.btn.parentNode.insertBefore(note, hit.btn.nextSibling);
+    }
+    note.__sig = txt;
+    note.textContent = txt;
+  }
+  function installHomeStartHijack() {
+    document.addEventListener("click", function (e) {
+      var btn = e.target.closest ? e.target.closest("#root button") : null;
+      if (!btn) return;
+      var mt = /^התחל אימון (A|B)$/.exec((btn.textContent || "").trim());
+      if (!mt) return;
+      var prog = editedProgramFor(mt[1]);
+      if (!prog) return; // no edited copy — let the built-in workout start
+      e.preventDefault(); e.stopPropagation();
+      startRunner(prog);
+      toast("▶️ מריץ את הגרסה שערכת");
+    }, true);
+  }
   function scheduleRefresh() {
     clearTimeout(navHookT);
-    navHookT = setTimeout(function () { ensureToolsTab(); refreshActiveTab(); injectWorkoutOverlays(); }, 40);
+    navHookT = setTimeout(function () { ensureToolsTab(); refreshActiveTab(); injectWorkoutOverlays(); injectHomeStartBadge(); }, 40);
   }
   function installNavHook() {
     var root = document.getElementById("root");
@@ -1828,7 +1917,7 @@ react/cjs/react-jsx-runtime.production.js:
         '</div>' +
         '<a class="wt-btn" href="index.html" style="text-decoration:none">⌂ חזרה לכל האפליקציות</a>' +
         '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">' +
-        '<div class="wt-ver">מהדורה 25.06 · v29</div>' +
+        '<div class="wt-ver">מהדורה 25.06 · v30 (A/B מהמסך הראשי)</div>' +
       '</div>';
 
     /* Rest timer overlay */
@@ -2251,6 +2340,11 @@ react/cjs/react-jsx-runtime.production.js:
     /* Load equipment + program-substitution caches (for the workout overlays) */
     loadEqCache();
     loadSubsCache();
+
+    /* Warm the programs cache so the home A/B buttons know about edited copies,
+       and run the edited copy when its home start button is tapped */
+    if (sbConfigured()) programsList().catch(function () {});
+    installHomeStartHijack();
 
     /* Keep the modern bottom-nav active tab highlighted */
     installNavHook();
