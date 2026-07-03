@@ -29,6 +29,15 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: '.'
+      # Pages occasionally reports "Deployment failed, try again later" on a
+      # perfectly good artifact; one automatic retry rides out the hiccup.
       - name: Deploy to GitHub Pages
         id: deployment
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
+      - name: Wait before retry
+        if: steps.deployment.outcome == 'failure'
+        run: sleep 30
+      - name: Retry deploy (transient Pages failure)
+        if: steps.deployment.outcome == 'failure'
         uses: actions/deploy-pages@v4
