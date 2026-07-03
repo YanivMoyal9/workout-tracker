@@ -374,6 +374,37 @@
   .wt-heat-legend .wt-cell { width: 13px; height: 13px; }
 
   /* ===== Modernized bottom navigation bar (overrides the app's inline styles) ===== */
+  /* ---- Home & app-wide polish (CSS-only over the React core) ---- */
+  /* All app cards: softer hairline + gentle elevation for a unified modern look */
+  #root div[style*="background: rgb(251, 250, 248)"][style*="border-radius: 16px"] {
+    border-color: rgba(20, 19, 15, .06) !important;
+    box-shadow: 0 2px 12px rgba(20, 19, 15, .05);
+  }
+  /* A/B dial buttons: depth (soft drop + inner bevel) and tactile press */
+  #root button[style*="border-radius: 50%"] {
+    box-shadow: 0 12px 26px rgba(20, 19, 15, .22), inset 0 -8px 16px rgba(0, 0, 0, .16), inset 0 5px 12px rgba(255, 255, 255, .22) !important;
+    transition: transform .16s ease, box-shadow .16s ease !important;
+  }
+  #root button[style*="border-radius: 50%"]:active {
+    transform: scale(.94) !important;
+    box-shadow: 0 6px 14px rgba(20, 19, 15, .2), inset 0 -6px 12px rgba(0, 0, 0, .16) !important;
+  }
+  /* Primary start button: floating pill */
+  #root button[style*="background: rgb(25, 26, 28)"][style*="font-size: 30px"] {
+    box-shadow: 0 10px 24px rgba(25, 26, 28, .26) !important;
+    transition: transform .12s ease !important;
+  }
+  #root button[style*="background: rgb(25, 26, 28)"][style*="font-size: 30px"]:active { transform: scale(.97) !important; }
+  /* Dark mode inverts #root, turning drop-shadows into halos — keep them subtle there */
+  html.wt-dark #root button[style*="border-radius: 50%"] {
+    box-shadow: 0 6px 14px rgba(20, 19, 15, .12), inset 0 -8px 16px rgba(0, 0, 0, .14) !important;
+  }
+  html.wt-dark #root button[style*="background: rgb(25, 26, 28)"][style*="font-size: 30px"] {
+    box-shadow: 0 4px 12px rgba(25, 26, 28, .12) !important;
+  }
+  html.wt-dark #root div[style*="background: rgb(251, 250, 248)"][style*="border-radius: 16px"] {
+    box-shadow: none;
+  }
   #root nav {
     background: rgba(251, 250, 248, .82) !important;
     -webkit-backdrop-filter: saturate(160%) blur(14px); backdrop-filter: saturate(160%) blur(14px);
