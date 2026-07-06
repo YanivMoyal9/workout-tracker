@@ -1,0 +1,21 @@
+{
+  "name": "הליכה וריצה",
+  "short_name": "הליכה וריצה",
+  "description": "מעקב הליכה וריצה ברחוב עם GPS — מרחק, קצב, קלוריות, שומן, יעדים ושיאים",
+  "lang": "he",
+  "dir": "rtl",
+  "start_url": "run-tracker.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#E7E5E0",
+  "theme_color": "#E7E5E0",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%232F3033'/%3E%3Cg fill='none' stroke='%236AA84F' stroke-width='30' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='300' cy='120' r='34'/%3E%3Cpath d='M290 190 L226 268 L286 330 L266 420'/%3E%3Cpath d='M290 190 L360 240 L416 228'/%3E%3Cpath d='M226 268 L160 260 L112 316'/%3E%3Cpath d='M286 330 L352 372 L360 432'/%3E%3C/g%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

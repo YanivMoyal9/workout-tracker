@@ -1,0 +1,1178 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#E7E5E0" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<link rel="manifest" href="run-manifest.json" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🏃%3C/text%3E%3C/svg%3E" />
+<title>הליכה וריצה</title>
+<style>
+  :root{
+    --bg:#E7E5E0; --card:#FBFAF8; --ink:#2F3033; --muted:#7C7F85; --faint:#A0A29A;
+    --green:#6AA84F; --green-d:#2F7A3D; --orange:#D9744F; --red:#C64B3C;
+    --dark-bg:#141519; --dark-card:#1F2126; --dark-ink:#F0F0F2; --dark-muted:#8E9196;
+    --r:18px; --shadow:0 1px 3px rgba(20,19,15,.07);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+    min-height:100vh; overscroll-behavior-y:none}
+  button{font-family:inherit;border:none;cursor:pointer;background:none;color:inherit}
+  input,select{font-family:inherit}
+  .num{font-variant-numeric:tabular-nums}
+  .hidden{display:none !important}
+
+  /* ===== App frame ===== */
+  #app{max-width:520px;margin:0 auto;padding:14px 16px calc(84px + env(safe-area-inset-bottom))}
+  .screen{animation:fadein .18s ease}
+  @keyframes fadein{from{opacity:.55;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+  /* ===== Bottom nav ===== */
+  #nav{position:fixed;bottom:0;left:0;right:0;z-index:50;
+    display:flex;justify-content:center;gap:2px;
+    background:rgba(251,250,248,.92);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+    border-top:1px solid rgba(0,0,0,.06);padding:6px 8px calc(6px + env(safe-area-inset-bottom))}
+  #nav button{flex:1;max-width:110px;display:flex;flex-direction:column;align-items:center;gap:2px;
+    padding:6px 4px;border-radius:12px;font-size:10.5px;font-weight:700;color:var(--muted)}
+  #nav button .i{font-size:21px;line-height:1}
+  #nav button.on{color:var(--green-d);background:rgba(47,122,61,.09)}
+
+  /* ===== Cards / generic ===== */
+  .card{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:16px;margin:12px 0}
+  .sec-t{font-size:11.5px;font-weight:800;color:var(--faint);letter-spacing:.07em;margin:18px 4px 6px}
+  h1{font-size:22px;font-weight:800;margin:6px 2px 2px}
+  .sub{color:var(--muted);font-size:13.5px;margin:0 2px}
+
+  /* ===== Home ===== */
+  .home-head{display:flex;align-items:center;justify-content:space-between}
+  .week-card{display:flex;align-items:center;gap:16px}
+  .ringwrap{position:relative;width:108px;height:108px;flex:none}
+  .ringwrap svg{transform:rotate(-90deg);display:block}
+  .ring-bg{fill:none;stroke:rgba(0,0,0,.08);stroke-width:10}
+  .ring-fg{fill:none;stroke:var(--green-d);stroke-width:10;stroke-linecap:round;transition:stroke-dashoffset .6s ease}
+  .ring-c{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .ring-c b{font-size:22px;font-weight:800}
+  .ring-c span{font-size:10.5px;color:var(--muted)}
+  .week-info b{font-size:15px;display:block;margin-bottom:2px}
+  .week-info span{font-size:12.5px;color:var(--muted);line-height:1.5;display:block}
+
+  .seg{display:flex;background:rgba(0,0,0,.06);border-radius:14px;padding:4px;margin:14px 0 10px}
+  .seg button{flex:1;padding:11px 8px;border-radius:11px;font-size:15px;font-weight:800;color:var(--muted);
+    display:flex;align-items:center;justify-content:center;gap:7px;transition:all .15s}
+  .seg button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
+  .seg button.on.walk{color:var(--green-d)}
+  .seg button.on.run{color:var(--orange)}
+
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 10px}
+  .chips button{padding:9px 15px;border-radius:999px;background:rgba(0,0,0,.06);
+    font-size:13.5px;font-weight:700;color:var(--muted)}
+  .chips button.on{background:var(--ink);color:#fff}
+  .goal-step{display:flex;align-items:center;justify-content:center;gap:14px;margin:6px 0 4px}
+  .goal-step button{width:46px;height:46px;border-radius:14px;background:rgba(0,0,0,.07);
+    font-size:22px;font-weight:800;color:var(--ink)}
+  .goal-step button:active{transform:scale(.93)}
+  .goal-val{min-width:120px;text-align:center}
+  .goal-val b{font-size:30px;font-weight:800;display:block}
+  .goal-val span{font-size:12px;color:var(--muted)}
+
+  #btn-start{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;
+    padding:19px;margin:16px 0 4px;border-radius:20px;background:var(--green-d);color:#fff;
+    font-size:19px;font-weight:800;box-shadow:0 6px 18px rgba(47,122,61,.35);transition:transform .12s}
+  #btn-start:active{transform:scale(.97)}
+  #btn-start.run{background:var(--orange);box-shadow:0 6px 18px rgba(217,116,79,.35)}
+  .gps-note{text-align:center;font-size:11.5px;color:var(--faint);margin:8px 0 0}
+
+  /* ===== Workout list items ===== */
+  .w-item{display:flex;align-items:center;gap:13px;background:var(--card);border-radius:16px;
+    box-shadow:var(--shadow);padding:13px 15px;margin:9px 0;width:100%;text-align:start}
+  .w-item:active{transform:scale(.985)}
+  .w-ico{width:44px;height:44px;flex:none;border-radius:13px;display:flex;align-items:center;justify-content:center;
+    font-size:22px;background:rgba(106,168,79,.13)}
+  .w-ico.run{background:rgba(217,116,79,.14)}
+  .w-mid{flex:1;min-width:0}
+  .w-mid b{font-size:15px;font-weight:800;display:block}
+  .w-mid span{font-size:12px;color:var(--muted)}
+  .w-kpi{text-align:left;flex:none}
+  .w-kpi b{font-size:16px;font-weight:800;display:block}
+  .w-kpi span{font-size:11px;color:var(--muted)}
+  .empty{text-align:center;color:var(--muted);font-size:13.5px;padding:26px 10px;line-height:1.7}
+  .empty .big{font-size:34px;display:block;margin-bottom:6px}
+
+  /* ===== Stats ===== */
+  .tot-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+  .tot{background:var(--card);border-radius:15px;box-shadow:var(--shadow);padding:13px 8px;text-align:center}
+  .tot b{font-size:19px;font-weight:800;display:block}
+  .tot span{font-size:11px;color:var(--muted)}
+  .chart-wrap{direction:ltr}
+  .rec-row{display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid rgba(0,0,0,.05)}
+  .rec-row:last-child{border-bottom:none}
+  .rec-row .i{font-size:20px;width:30px;text-align:center}
+  .rec-row .t{flex:1;font-size:13.5px;font-weight:700}
+  .rec-row .t small{display:block;font-weight:400;color:var(--muted);font-size:11.5px}
+  .rec-row b{font-size:15px;font-weight:800}
+
+  /* ===== Profile ===== */
+  .fld{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 2px;
+    border-bottom:1px solid rgba(0,0,0,.05)}
+  .fld:last-child{border-bottom:none}
+  .fld label{font-size:14px;font-weight:700}
+  .fld label small{display:block;font-weight:400;color:var(--muted);font-size:11.5px;margin-top:1px}
+  .fld input[type=number]{width:82px;padding:9px 10px;border-radius:10px;border:1px solid rgba(0,0,0,.14);
+    background:#fff;font-size:15px;font-weight:700;text-align:center;color:var(--ink)}
+  .fld select{padding:9px 10px;border-radius:10px;border:1px solid rgba(0,0,0,.14);background:#fff;
+    font-size:14px;font-weight:700;color:var(--ink)}
+  .switch{position:relative;width:50px;height:29px;flex:none}
+  .switch input{opacity:0;width:0;height:0}
+  .switch i{position:absolute;inset:0;border-radius:999px;background:rgba(0,0,0,.15);transition:.2s}
+  .switch i:before{content:"";position:absolute;width:23px;height:23px;border-radius:50%;background:#fff;
+    top:3px;inset-inline-start:3px;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+  .switch input:checked + i{background:var(--green-d)}
+  .switch input:checked + i:before{transform:translateX(-21px)}
+  .p-btn{display:block;width:100%;padding:13px;margin:9px 0;border-radius:13px;background:rgba(0,0,0,.06);
+    font-size:14px;font-weight:700;text-align:center}
+  .p-btn.danger{background:rgba(198,75,60,.1);color:var(--red)}
+  .ver{text-align:center;font-size:10.5px;color:var(--faint);margin-top:16px}
+
+  /* ============================================================
+     LIVE SCREEN — dark, treadmill-console style
+     ============================================================ */
+  #scr-live{position:fixed;inset:0;z-index:100;background:var(--dark-bg);color:var(--dark-ink);
+    display:flex;flex-direction:column;overflow-y:auto;
+    padding:calc(10px + env(safe-area-inset-top)) 16px calc(14px + env(safe-area-inset-bottom))}
+  .lv-inner{max-width:520px;width:100%;margin:0 auto;display:flex;flex-direction:column;flex:1}
+  .lv-top{display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--dark-muted)}
+  .lv-mode{font-weight:800;font-size:14px;color:var(--dark-ink)}
+  .gps{display:flex;align-items:flex-end;gap:2.5px;height:15px}
+  .gps i{width:4.5px;border-radius:2px;background:rgba(255,255,255,.18)}
+  .gps i:nth-child(1){height:6px}.gps i:nth-child(2){height:10px}.gps i:nth-child(3){height:14px}
+  .gps.q1 i:nth-child(1){background:var(--orange)}
+  .gps.q2 i:nth-child(-n+2){background:#D9C34F}
+  .gps.q3 i{background:var(--green)}
+
+  .lv-timer{text-align:center;font-size:min(19vw,84px);font-weight:800;letter-spacing:.01em;
+    margin:10px 0 0;line-height:1.05}
+  .lv-timer-lb{text-align:center;font-size:12px;color:var(--dark-muted);margin-bottom:8px}
+
+  .lv-hero{position:relative;width:172px;height:172px;margin:4px auto 10px}
+  .lv-hero svg{transform:rotate(-90deg);display:block}
+  .lv-ring-bg{fill:none;stroke:rgba(255,255,255,.10);stroke-width:11}
+  .lv-ring-fg{fill:none;stroke:var(--green);stroke-width:11;stroke-linecap:round;transition:stroke-dashoffset .5s ease}
+  .lv-ring-fg.run{stroke:var(--orange)}
+  .lv-ring-fg.done{stroke:#5FD068}
+  .lv-hero-c{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px}
+  .lv-hero-c .lb{font-size:10.5px;color:var(--dark-muted);letter-spacing:.05em}
+  .lv-hero-c b{font-size:34px;font-weight:800}
+  .lv-hero-c .un{font-size:11px;color:var(--dark-muted)}
+
+  .lv-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:2px 0 12px}
+  .lv-tile{background:var(--dark-card);border-radius:14px;padding:10px 6px 9px;text-align:center}
+  .lv-tile .lb{display:block;font-size:10px;color:var(--dark-muted);margin-bottom:3px;letter-spacing:.03em}
+  .lv-tile b{font-size:19px;font-weight:800;display:block;line-height:1.15}
+  .lv-tile .un{font-size:9.5px;color:var(--dark-muted)}
+  .lv-tile.hl b{color:var(--green)}
+  .lv-tile.hl.run b{color:var(--orange)}
+
+  .lv-ap{display:none;align-items:center;justify-content:center;gap:8px;margin:0 0 10px;padding:10px;
+    border-radius:12px;background:rgba(217,195,79,.13);color:#E8DA8C;font-size:13px;font-weight:700}
+  .lv-ap.on{display:flex}
+  .lv-wait{display:flex;align-items:center;justify-content:center;gap:8px;margin:0 0 10px;padding:10px;
+    border-radius:12px;background:rgba(255,255,255,.06);color:var(--dark-muted);font-size:13px;font-weight:700}
+
+  .lv-ctrl{display:flex;gap:10px;margin-top:auto}
+  .lv-ctrl button{flex:1;padding:17px 10px;border-radius:17px;font-size:16px;font-weight:800;
+    display:flex;align-items:center;justify-content:center;gap:8px}
+  #lv-pause{background:rgba(255,255,255,.10);color:var(--dark-ink)}
+  #lv-pause.resume{background:var(--green-d);color:#fff}
+  #lv-finish{position:relative;overflow:hidden;background:rgba(198,75,60,.16);color:#F0968A}
+  #lv-finish .fill{position:absolute;inset:0;background:var(--red);transform:scaleX(0);transform-origin:right;
+    transition:none}
+  #lv-finish span{position:relative;z-index:1}
+
+  /* ===== Countdown ===== */
+  #countdown{position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center;
+    background:var(--dark-bg);color:#fff}
+  #countdown.on{display:flex}
+  #countdown b{font-size:120px;font-weight:800;animation:cd .95s ease infinite}
+  @keyframes cd{0%{transform:scale(.6);opacity:.3}25%{transform:scale(1.06);opacity:1}100%{transform:scale(1);opacity:.9}}
+
+  /* ===== Summary (also history detail) ===== */
+  #scr-summary{position:fixed;inset:0;z-index:120;background:var(--bg);overflow-y:auto;
+    padding:calc(12px + env(safe-area-inset-top)) 16px calc(28px + env(safe-area-inset-bottom))}
+  .sm-inner{max-width:520px;margin:0 auto}
+  .sm-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
+  .sm-head h2{font-size:19px;font-weight:800;margin:0}
+  .sm-x{width:36px;height:36px;border-radius:50%;background:rgba(0,0,0,.07);font-size:15px}
+  .badge{display:flex;align-items:center;gap:12px;border-radius:var(--r);padding:15px 16px;margin:10px 0}
+  .badge .bi{font-size:30px}
+  .badge b{font-size:16px;display:block}
+  .badge span{font-size:12.5px;color:var(--muted)}
+  .badge.ok{background:rgba(47,122,61,.12)}
+  .badge.fail{background:rgba(198,75,60,.09)}
+  .badge.free{background:var(--card);box-shadow:var(--shadow)}
+  .sm-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0}
+  .sm-cell{background:var(--card);border-radius:14px;box-shadow:var(--shadow);padding:11px 4px;text-align:center}
+  .sm-cell .i{font-size:16px;display:block;margin-bottom:2px}
+  .sm-cell b{font-size:16px;font-weight:800;display:block;line-height:1.2}
+  .sm-cell span{font-size:9.5px;color:var(--muted)}
+  .sm-dist{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);
+    text-align:center;padding:18px 10px 15px;margin:12px 0}
+  .sm-dist b{font-size:52px;font-weight:800;line-height:1}
+  .sm-dist span{font-size:12.5px;color:var(--muted);display:block;margin-top:4px}
+  .route-svg{display:block;width:100%;height:190px;direction:ltr}
+  .split-row{display:flex;align-items:center;gap:10px;padding:7px 2px;font-size:13.5px}
+  .split-row .k{width:52px;font-weight:800;flex:none}
+  .split-bar{flex:1;height:16px;border-radius:8px;background:rgba(47,122,61,.16);position:relative;direction:ltr}
+  .split-bar i{position:absolute;top:0;bottom:0;left:0;border-radius:8px;background:var(--green-d);min-width:8px}
+  .split-row .v{width:56px;text-align:left;font-weight:700;flex:none}
+  .sm-actions{display:flex;gap:10px;margin:14px 0 4px}
+  .sm-actions button{flex:1;padding:14px 8px;border-radius:14px;font-size:14px;font-weight:800;
+    background:var(--card);box-shadow:var(--shadow)}
+  .sm-actions button.primary{background:var(--green-d);color:#fff}
+  .sm-actions button.danger{color:var(--red)}
+
+  /* ===== Toast ===== */
+  #toast{position:fixed;bottom:calc(96px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);
+    z-index:300;background:var(--ink);color:#fff;font-size:13.5px;font-weight:700;padding:12px 20px;
+    border-radius:999px;box-shadow:0 6px 20px rgba(0,0,0,.3);opacity:0;pointer-events:none;
+    transition:opacity .25s;max-width:88vw;text-align:center}
+  #toast.on{opacity:1}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ================= HOME ================= -->
+  <section class="screen" id="scr-home">
+    <div class="home-head">
+      <div>
+        <h1 id="hm-hello">שלום 👋</h1>
+        <p class="sub" id="hm-date"></p>
+      </div>
+      <div style="font-size:34px">🏃</div>
+    </div>
+
+    <div class="card week-card">
+      <div class="ringwrap">
+        <svg width="108" height="108" viewBox="0 0 108 108">
+          <circle class="ring-bg" cx="54" cy="54" r="47"></circle>
+          <circle class="ring-fg" id="hm-ring" cx="54" cy="54" r="47"
+                  stroke-dasharray="295.3" stroke-dashoffset="295.3"></circle>
+        </svg>
+        <div class="ring-c"><b class="num" id="hm-week-km">0</b><span>ק״מ השבוע</span></div>
+      </div>
+      <div class="week-info">
+        <b id="hm-week-title">היעד השבועי שלך</b>
+        <span id="hm-week-sub"></span>
+        <span id="hm-week-streak"></span>
+      </div>
+    </div>
+
+    <div class="sec-t">אימון חדש</div>
+    <div class="card" style="padding-top:12px">
+      <div class="seg" id="mode-seg">
+        <button class="walk on" data-mode="walk">🚶 הליכה</button>
+        <button class="run" data-mode="run">🏃 ריצה</button>
+      </div>
+
+      <div class="chips" id="goal-chips">
+        <button data-g="free" class="on">חופשי</button>
+        <button data-g="time">⏱ זמן</button>
+        <button data-g="dist">📏 מרחק</button>
+        <button data-g="kcal">🔥 קלוריות</button>
+      </div>
+      <div class="goal-step hidden" id="goal-step">
+        <button id="goal-minus">−</button>
+        <div class="goal-val"><b class="num" id="goal-val">30</b><span id="goal-un">דקות</span></div>
+        <button id="goal-plus">+</button>
+      </div>
+
+      <button id="btn-start">▶ התחל אימון</button>
+      <p class="gps-note">📡 המרחק נמדד לפי GPS — מומלץ שמיים פתוחים ומסך דולק</p>
+    </div>
+
+    <div class="sec-t">אימונים אחרונים</div>
+    <div id="hm-recent"></div>
+  </section>
+
+  <!-- ================= HISTORY ================= -->
+  <section class="screen hidden" id="scr-history">
+    <h1>היסטוריה</h1>
+    <p class="sub" id="hi-sub"></p>
+    <div id="hi-list" style="margin-top:10px"></div>
+  </section>
+
+  <!-- ================= STATS ================= -->
+  <section class="screen hidden" id="scr-stats">
+    <h1>סטטיסטיקות</h1>
+    <p class="sub">כל הזמנים</p>
+    <div class="tot-grid" style="margin-top:12px">
+      <div class="tot"><b class="num" id="st-km">0</b><span>ק״מ</span></div>
+      <div class="tot"><b class="num" id="st-time">0</b><span>שעות</span></div>
+      <div class="tot"><b class="num" id="st-kcal">0</b><span>קק״ל</span></div>
+    </div>
+    <div class="sec-t">מרחק שבועי — 8 שבועות</div>
+    <div class="card chart-wrap" id="st-chart"></div>
+    <div class="sec-t">שיאים</div>
+    <div class="card" id="st-records"></div>
+  </section>
+
+  <!-- ================= PROFILE ================= -->
+  <section class="screen hidden" id="scr-profile">
+    <h1>פרופיל והגדרות</h1>
+    <p class="sub">משמש לחישוב קלוריות, שומן וצעדים</p>
+    <div class="card">
+      <div class="fld"><label>משקל <small>ק״ג</small></label><input type="number" id="pf-weight" min="30" max="250" step="0.5"></div>
+      <div class="fld"><label>גובה <small>ס״מ</small></label><input type="number" id="pf-height" min="120" max="230"></div>
+      <div class="fld"><label>גיל</label><input type="number" id="pf-age" min="10" max="110"></div>
+      <div class="fld"><label>מין</label>
+        <select id="pf-sex"><option value="m">זכר</option><option value="f">נקבה</option></select>
+      </div>
+      <div class="fld"><label>יעד שבועי <small>ק״מ</small></label><input type="number" id="pf-goal" min="1" max="200" step="1"></div>
+    </div>
+    <div class="card">
+      <div class="fld"><label>השהיה אוטומטית <small>עצירת השעון כשנעצרים</small></label>
+        <span class="switch"><input type="checkbox" id="pf-autopause"><i></i></span></div>
+      <div class="fld"><label>כריזה קולית <small>עדכון קולי בכל קילומטר</small></label>
+        <span class="switch"><input type="checkbox" id="pf-voice"><i></i></span></div>
+    </div>
+    <div class="sec-t">גיבוי הנתונים</div>
+    <div class="card">
+      <button class="p-btn" id="pf-export">⬇️ ייצוא גיבוי (JSON)</button>
+      <button class="p-btn" id="pf-import">⬆️ ייבוא גיבוי</button>
+      <input type="file" id="pf-file" accept=".json,application/json" class="hidden">
+      <button class="p-btn danger" id="pf-wipe">🗑 מחיקת כל הנתונים</button>
+    </div>
+    <p class="ver">הליכה וריצה · הנתונים נשמרים מקומית במכשיר · v1</p>
+  </section>
+</div>
+
+<!-- ================= BOTTOM NAV ================= -->
+<nav id="nav">
+  <button data-scr="home" class="on"><span class="i">🏠</span>בית</button>
+  <button data-scr="history"><span class="i">📅</span>היסטוריה</button>
+  <button data-scr="stats"><span class="i">📊</span>סטטיסטיקות</button>
+  <button data-scr="profile"><span class="i">⚙️</span>פרופיל</button>
+</nav>
+
+<!-- ================= LIVE ================= -->
+<section id="scr-live" class="hidden">
+  <div class="lv-inner">
+    <div class="lv-top">
+      <span class="num" id="lv-clock">--:--</span>
+      <span class="lv-mode" id="lv-mode">🚶 הליכה</span>
+      <span class="gps" id="lv-gps" title="עוצמת GPS"><i></i><i></i><i></i></span>
+    </div>
+
+    <div class="lv-timer num" id="lv-timer">00:00</div>
+    <div class="lv-timer-lb">זמן תנועה</div>
+
+    <div class="lv-hero">
+      <svg width="172" height="172" viewBox="0 0 172 172">
+        <circle class="lv-ring-bg" cx="86" cy="86" r="76"></circle>
+        <circle class="lv-ring-fg" id="lv-ring" cx="86" cy="86" r="76"
+                stroke-dasharray="477.5" stroke-dashoffset="477.5"></circle>
+      </svg>
+      <div class="lv-hero-c">
+        <span class="lb" id="lv-hero-lb">מרחק</span>
+        <b class="num" id="lv-hero-val">0.00</b>
+        <span class="un" id="lv-hero-un">ק״מ</span>
+      </div>
+    </div>
+
+    <div class="lv-wait" id="lv-wait">📡 מאתר לוויינים…</div>
+    <div class="lv-ap" id="lv-ap">⏸ השהיה אוטומטית — ממתינים לתנועה</div>
+
+    <div class="lv-grid">
+      <div class="lv-tile hl" id="lv-t-dist"><span class="lb">מרחק</span><b class="num" id="lv-dist">0.00</b><span class="un">ק״מ</span></div>
+      <div class="lv-tile"><span class="lb">קצב נוכחי</span><b class="num" id="lv-pace">—</b><span class="un">דק׳/ק״מ</span></div>
+      <div class="lv-tile"><span class="lb">קצב ממוצע</span><b class="num" id="lv-avgpace">—</b><span class="un">דק׳/ק״מ</span></div>
+      <div class="lv-tile"><span class="lb">מהירות</span><b class="num" id="lv-speed">0.0</b><span class="un">קמ״ש</span></div>
+      <div class="lv-tile"><span class="lb">קלוריות</span><b class="num" id="lv-kcal">0</b><span class="un">קק״ל</span></div>
+      <div class="lv-tile"><span class="lb">שומן</span><b class="num" id="lv-fat">0.0</b><span class="un">גרם</span></div>
+      <div class="lv-tile"><span class="lb">METs</span><b class="num" id="lv-mets">1.0</b><span class="un">עצימות</span></div>
+      <div class="lv-tile"><span class="lb">צעדים</span><b class="num" id="lv-steps">0</b><span class="un">משוער</span></div>
+      <div class="lv-tile"><span class="lb">עלייה</span><b class="num" id="lv-elev">0</b><span class="un">מטר</span></div>
+    </div>
+
+    <div class="lv-ctrl">
+      <button id="lv-pause">⏸ השהה</button>
+      <button id="lv-finish"><i class="fill" id="lv-finish-fill"></i><span>⏹ החזק לסיום</span></button>
+    </div>
+  </div>
+</section>
+
+<!-- ================= COUNTDOWN ================= -->
+<div id="countdown"><b id="cd-num">3</b></div>
+
+<!-- ================= SUMMARY / DETAIL ================= -->
+<section id="scr-summary" class="hidden">
+  <div class="sm-inner">
+    <div class="sm-head">
+      <h2 id="sm-title">סיכום אימון</h2>
+      <button class="sm-x" id="sm-close">✕</button>
+    </div>
+    <p class="sub" id="sm-date"></p>
+    <div class="badge free" id="sm-badge">
+      <span class="bi" id="sm-badge-i">✅</span>
+      <div><b id="sm-badge-t"></b><span id="sm-badge-s"></span></div>
+    </div>
+    <div class="sm-dist"><b class="num" id="sm-dist">0.00</b><span>קילומטרים</span></div>
+    <div class="sm-grid">
+      <div class="sm-cell"><span class="i">⏱</span><b class="num" id="sm-time">—</b><span>זמן תנועה</span></div>
+      <div class="sm-cell"><span class="i">⚡</span><b class="num" id="sm-pace">—</b><span>קצב (דק׳/ק״מ)</span></div>
+      <div class="sm-cell"><span class="i">🚀</span><b class="num" id="sm-speed">—</b><span>מהירות (קמ״ש)</span></div>
+      <div class="sm-cell"><span class="i">🔥</span><b class="num" id="sm-kcal">—</b><span>קלוריות</span></div>
+      <div class="sm-cell"><span class="i">🥑</span><b class="num" id="sm-fat">—</b><span>שומן (גרם)</span></div>
+      <div class="sm-cell"><span class="i">💠</span><b class="num" id="sm-mets">—</b><span>METs ממוצע</span></div>
+      <div class="sm-cell"><span class="i">👣</span><b class="num" id="sm-steps">—</b><span>צעדים</span></div>
+      <div class="sm-cell"><span class="i">⛰</span><b class="num" id="sm-elev">—</b><span>עלייה (מ׳)</span></div>
+    </div>
+    <div class="card hidden" id="sm-route-card" style="padding:8px">
+      <svg class="route-svg" id="sm-route" viewBox="0 0 320 190" preserveAspectRatio="xMidYMid meet"></svg>
+    </div>
+    <div class="sec-t hidden" id="sm-splits-t">קצב לפי קילומטר</div>
+    <div class="card hidden" id="sm-splits"></div>
+    <div class="sm-actions">
+      <button class="primary" id="sm-share">📤 שיתוף</button>
+      <button id="sm-gpx">🗺 GPX</button>
+      <button class="danger hidden" id="sm-del">🗑 מחיקה</button>
+    </div>
+  </div>
+</section>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+/* =====================================================================
+   הליכה וריצה — GPS walk/run tracker
+   Single-file app. Data lives in localStorage under rt_data_v1.
+   ===================================================================== */
+
+/* ---------- storage ---------- */
+const DB_KEY = "rt_data_v1";
+const DEFAULT_DB = {
+  profile: { weight: 80, height: 175, age: 30, sex: "m",
+             weeklyGoalKm: 15, autoPause: true, voice: true },
+  workouts: []
+};
+let db = loadDB();
+function loadDB() {
+  try {
+    const raw = localStorage.getItem(DB_KEY);
+    if (!raw) return JSON.parse(JSON.stringify(DEFAULT_DB));
+    const d = JSON.parse(raw);
+    if (!d || typeof d !== "object" || !Array.isArray(d.workouts)) throw 0;
+    d.profile = Object.assign({}, DEFAULT_DB.profile, d.profile || {});
+    return d;
+  } catch (e) { return JSON.parse(JSON.stringify(DEFAULT_DB)); }
+}
+function saveDB() {
+  try { localStorage.setItem(DB_KEY, JSON.stringify(db)); }
+  catch (e) { toast("שגיאה בשמירה — ייתכן שהאחסון מלא"); }
+}
+
+/* ---------- helpers ---------- */
+const $ = id => document.getElementById(id);
+const HDAYS = ["ראשון","שני","שלישי","רביעי","חמישי","שישי","שבת"];
+function fmtClock(sec, forceH) {
+  sec = Math.max(0, Math.round(sec));
+  const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+  const p = n => String(n).padStart(2, "0");
+  return (h || forceH) ? `${p(h)}:${p(m)}:${p(s)}` : `${p(m)}:${p(s)}`;
+}
+function fmtPace(secPerKm) {
+  if (!isFinite(secPerKm) || secPerKm <= 0 || secPerKm > 3600) return "—";
+  const m = Math.floor(secPerKm / 60), s = Math.round(secPerKm % 60);
+  return `${m}:${String(s === 60 ? 0 : s).padStart(2, "0")}`;
+}
+function fmtDate(ts) {
+  const d = new Date(ts);
+  return `יום ${HDAYS[d.getDay()]}, ${d.getDate()}.${d.getMonth() + 1}.${d.getFullYear()} · ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+}
+function hav(lat1, lon1, lat2, lon2) {
+  const R = 6371000, r = Math.PI / 180;
+  const dLat = (lat2 - lat1) * r, dLon = (lon2 - lon1) * r;
+  const a = Math.sin(dLat / 2) ** 2 +
+            Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+function vibrate(pat) { try { navigator.vibrate && navigator.vibrate(pat); } catch (e) {} }
+let toastT = null;
+function toast(msg, ms) {
+  const t = $("toast"); t.textContent = msg; t.classList.add("on");
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("on"), ms || 2600);
+}
+function speak(text) {
+  if (!db.profile.voice) return;
+  try {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "he-IL"; u.rate = 1;
+    speechSynthesis.cancel(); speechSynthesis.speak(u);
+  } catch (e) {}
+}
+
+/* ---------- physiology ----------
+   METs by speed (Compendium of Physical Activities, interpolated).
+   kcal = MET × weight(kg) × hours. Fat grams from intensity-dependent
+   fat-oxidation share (lower intensity → larger share of kcal from fat). */
+const MET_WALK = [[0,1.3],[2,2.0],[3.2,2.8],[4.0,3.0],[4.8,3.5],[5.6,4.3],[6.4,5.0],[7.2,6.3],[8.0,8.3]];
+const MET_RUN  = [[6.4,6.0],[8.0,8.3],[9.7,9.8],[11.3,11.0],[12.9,11.8],[14.5,12.8],[16.1,14.5],[17.7,16.0],[19.3,19.0],[22,23]];
+function metsAt(kmh, mode) {
+  if (kmh < 0.2) return 1.3;
+  const T = (mode === "run" && kmh >= 6.4) || kmh > 8.0 ? MET_RUN : MET_WALK;
+  if (kmh <= T[0][0]) return T[0][1];
+  for (let i = 1; i < T.length; i++) {
+    if (kmh <= T[i][0]) {
+      const [x0, y0] = T[i - 1], [x1, y1] = T[i];
+      return y0 + (y1 - y0) * (kmh - x0) / (x1 - x0);
+    }
+  }
+  return T[T.length - 1][1];
+}
+function fatShare(met) { return met < 3 ? .55 : met < 6 ? .45 : met < 9 ? .35 : .25; }
+function strideM(mode) {
+  const h = (db.profile.height || 175) / 100;
+  return mode === "run" ? h * 0.65 : h * 0.415;
+}
+
+/* =====================================================================
+   SESSION ENGINE
+   ===================================================================== */
+const S = {
+  on: false, mode: "walk", goal: { type: "free", value: 0 },
+  state: "active",            // active | paused | auto
+  startTs: 0, movingMs: 0, lastTick: 0,
+  distM: 0, kcal: 0, fatG: 0, elevGain: 0,
+  spdKmh: 0, lastFix: null, lastFixAt: 0, lastMoveAt: 0,
+  altEma: null, altRef: null,
+  path: [], lastPathPt: null, splits: [], goalDone: false,
+  watchId: null, tickId: null, wakeLock: null
+};
+let uiMode = "walk";
+let uiGoal = { type: "free", time: 30, dist: 3, kcal: 300 };
+
+const GOAL_CFG = {
+  time: { unit: "דקות",  step: 5,   min: 5,   max: 600 },
+  dist: { unit: "ק״מ",   step: 0.5, min: 0.5, max: 100 },
+  kcal: { unit: "קק״ל",  step: 25,  min: 50,  max: 5000 }
+};
+
+function startFlow() {
+  if (!("geolocation" in navigator)) { toast("המכשיר לא תומך ב-GPS"); return; }
+  if (!window.isSecureContext) { toast("GPS דורש חיבור מאובטח (https)"); return; }
+  $("btn-start").disabled = true;
+  navigator.geolocation.getCurrentPosition(
+    () => { $("btn-start").disabled = false; countdown(3); },
+    err => {
+      $("btn-start").disabled = false;
+      toast(err.code === 1
+        ? "אין הרשאת מיקום — יש לאשר גישה למיקום בדפדפן"
+        : "לא נמצא אות GPS — נסו שוב תחת שמיים פתוחים", 3600);
+    },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }
+  );
+}
+function countdown(n) {
+  const cd = $("countdown");
+  cd.classList.add("on");
+  const step = k => {
+    if (k === 0) { cd.classList.remove("on"); beginSession(); return; }
+    $("cd-num").textContent = k; vibrate(40);
+    setTimeout(() => step(k - 1), 950);
+  };
+  step(n);
+}
+
+function beginSession() {
+  Object.assign(S, {
+    on: true, mode: uiMode, state: "active",
+    goal: uiGoal.type === "free" ? { type: "free", value: 0 }
+        : { type: uiGoal.type, value: uiGoal[uiGoal.type] },
+    startTs: Date.now(), movingMs: 0, lastTick: performance.now(),
+    distM: 0, kcal: 0, fatG: 0, elevGain: 0,
+    spdKmh: 0, lastFix: null, lastFixAt: 0, lastMoveAt: Date.now(),
+    altEma: null, altRef: null,
+    path: [], lastPathPt: null, splits: [], goalDone: false
+  });
+  document.body.style.overflow = "hidden";
+  $("scr-live").classList.remove("hidden");
+  $("lv-mode").textContent = S.mode === "run" ? "🏃 ריצה" : "🚶 הליכה";
+  $("lv-ring").classList.toggle("run", S.mode === "run");
+  $("lv-t-dist").classList.toggle("run", S.mode === "run");
+  $("lv-wait").classList.remove("hidden");
+  $("lv-pause").textContent = "⏸ השהה";
+  $("lv-pause").classList.remove("resume");
+  setupHero();
+  S.watchId = navigator.geolocation.watchPosition(onFix, onFixErr,
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+  S.tickId = setInterval(tick, 500);
+  grabWakeLock();
+  speak(S.mode === "run" ? "האימון התחיל. ריצה טובה!" : "האימון התחיל. הליכה נעימה!");
+  renderLive();
+}
+
+function setupHero() {
+  const lb = $("lv-hero-lb"), un = $("lv-hero-un");
+  if (S.goal.type === "time")      { lb.textContent = "נותר — זמן";     un.textContent = "מתוך " + S.goal.value + " דק׳"; }
+  else if (S.goal.type === "dist") { lb.textContent = "נותר — מרחק";    un.textContent = "מתוך " + S.goal.value + " ק״מ"; }
+  else if (S.goal.type === "kcal") { lb.textContent = "נותר — קלוריות"; un.textContent = "מתוך " + S.goal.value + " קק״ל"; }
+  else                             { lb.textContent = "מרחק";           un.textContent = "ק״מ"; }
+}
+
+/* ----- GPS fixes ----- */
+function gpsQuality(acc) { return acc <= 12 ? 3 : acc <= 25 ? 2 : acc <= 40 ? 1 : 0; }
+function onFix(pos) {
+  const c = pos.coords, now = Date.now();
+  const q = gpsQuality(c.accuracy || 99);
+  const g = $("lv-gps"); g.className = "gps q" + q;
+  if (q === 0) return;                       // too inaccurate — indicator only
+  $("lv-wait").classList.add("hidden");
+
+  const p = { lat: c.latitude, lng: c.longitude, t: pos.timestamp || now, alt: c.altitude };
+  if (!S.lastFix) { S.lastFix = p; S.lastFixAt = now; pushPath(p); return; }
+
+  const dt = (p.t - S.lastFix.t) / 1000;
+  if (dt <= 0.3) return;
+  const d = hav(S.lastFix.lat, S.lastFix.lng, p.lat, p.lng);
+  const v = d / dt;                          // m/s
+  if (v > 9) { S.lastFix = p; S.lastFixAt = now; return; }   // >32 km/h — GPS jump
+
+  S.spdKmh = S.spdKmh * 0.55 + (v * 3.6) * 0.45;
+  S.lastFixAt = now;
+  if (v > 0.7) S.lastMoveAt = now;
+
+  if (S.state === "active") {
+    if (d >= 1) { S.distM += d; pushPath(p); checkSplits(); checkGoal(); }
+    trackElevation(c);
+    // auto-pause: no real movement for 5s
+    if (db.profile.autoPause && now - S.lastMoveAt > 5000 && S.spdKmh < 1.2) {
+      S.state = "auto"; $("lv-ap").classList.add("on"); vibrate(60);
+    }
+  } else if (S.state === "auto" && v > 0.9 && S.spdKmh > 1.6) {
+    S.state = "active"; $("lv-ap").classList.remove("on"); vibrate(30);
+  }
+  S.lastFix = p;
+}
+function onFixErr(err) {
+  if (err.code === 1) { toast("הרשאת המיקום נחסמה — האימון ללא מדידת מרחק"); }
+  $("lv-gps").className = "gps q0";
+}
+function pushPath(p) {
+  if (S.lastPathPt && hav(S.lastPathPt.lat, S.lastPathPt.lng, p.lat, p.lng) < 8) return;
+  S.path.push([p.lat, p.lng]); S.lastPathPt = p;
+  if (S.path.length > 1400) S.path = S.path.filter((_, i) => i % 2 === 0);
+}
+function trackElevation(c) {
+  if (c.altitude == null || (c.altitudeAccuracy != null && c.altitudeAccuracy > 12)) return;
+  S.altEma = S.altEma == null ? c.altitude : S.altEma * 0.75 + c.altitude * 0.25;
+  if (S.altRef == null) { S.altRef = S.altEma; return; }
+  if (S.altEma - S.altRef > 2) { S.elevGain += S.altEma - S.altRef; S.altRef = S.altEma; }
+  else if (S.altEma < S.altRef) S.altRef = S.altEma;
+}
+function checkSplits() {
+  while (S.distM / 1000 >= S.splits.length + 1) {
+    const cum = S.movingMs / 1000;
+    const prev = S.splits.length ? S.splits[S.splits.length - 1].cum : 0;
+    const split = { km: S.splits.length + 1, sec: cum - prev, cum };
+    S.splits.push(split);
+    vibrate([60, 60, 60]);
+    const m = Math.floor(split.sec / 60), s = Math.round(split.sec % 60);
+    speak(`קילומטר ${split.km}. ${m} דקות ו-${s} שניות.`);
+  }
+}
+function goalProgress() {
+  if (S.goal.type === "time") return (S.movingMs / 60000) / S.goal.value;
+  if (S.goal.type === "dist") return (S.distM / 1000) / S.goal.value;
+  if (S.goal.type === "kcal") return S.kcal / S.goal.value;
+  return 0;
+}
+function checkGoal() {
+  if (S.goal.type === "free" || S.goalDone) return;
+  if (goalProgress() >= 1) {
+    S.goalDone = true;
+    $("lv-ring").classList.add("done");
+    vibrate([120, 80, 120, 80, 240]);
+    speak("כל הכבוד! הגעת ליעד!");
+    toast("🎉 היעד הושג!");
+  }
+}
+
+/* ----- ticker ----- */
+function tick() {
+  const now = performance.now();
+  const dt = Math.min(2000, now - S.lastTick);
+  S.lastTick = now;
+
+  // decay speed if GPS went quiet
+  if (Date.now() - S.lastFixAt > 5000) S.spdKmh *= 0.75;
+  if (S.spdKmh < 0.15) S.spdKmh = 0;
+
+  if (S.state === "active") {
+    S.movingMs += dt;
+    const met = metsAt(S.spdKmh, S.mode);
+    const dK = met * (db.profile.weight || 80) * (dt / 3600000);
+    S.kcal += dK;
+    S.fatG += dK * fatShare(met) / 9;
+    if (S.goal.type === "time" || S.goal.type === "kcal") checkGoal();
+  }
+  renderLive();
+}
+
+function renderLive() {
+  const d = new Date();
+  $("lv-clock").textContent = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+  const sec = S.movingMs / 1000;
+  $("lv-timer").textContent = fmtClock(sec);
+  $("lv-dist").textContent = (S.distM / 1000).toFixed(2);
+  $("lv-speed").textContent = S.spdKmh.toFixed(1);
+  $("lv-pace").textContent = S.spdKmh > 1 ? fmtPace(3600 / S.spdKmh) : "—";
+  $("lv-avgpace").textContent = S.distM > 30 ? fmtPace(sec / (S.distM / 1000)) : "—";
+  $("lv-kcal").textContent = Math.round(S.kcal);
+  $("lv-fat").textContent = S.fatG.toFixed(1);
+  $("lv-mets").textContent = metsAt(S.spdKmh, S.mode).toFixed(1);
+  $("lv-steps").textContent = Math.round(S.distM / strideM(S.mode)).toLocaleString("he-IL");
+  $("lv-elev").textContent = Math.round(S.elevGain);
+
+  // hero: goal ring or free distance
+  const C = 477.5;
+  if (S.goal.type === "free") {
+    $("lv-hero-val").textContent = (S.distM / 1000).toFixed(2);
+    $("lv-ring").style.strokeDashoffset = C * (1 - Math.min(1, (sec / 60) % 60 / 60));
+  } else {
+    const pr = Math.min(1, goalProgress());
+    $("lv-ring").style.strokeDashoffset = C * (1 - pr);
+    let remText;
+    if (S.goal.type === "time") remText = fmtClock(Math.max(0, S.goal.value * 60 - sec));
+    else if (S.goal.type === "dist") remText = Math.max(0, S.goal.value - S.distM / 1000).toFixed(2);
+    else remText = String(Math.max(0, Math.ceil(S.goal.value - S.kcal)));
+    $("lv-hero-val").textContent = S.goalDone ? "🎉" : remText;
+  }
+}
+
+/* ----- pause / finish ----- */
+$("lv-pause").addEventListener("click", () => {
+  if (S.state === "paused") {
+    S.state = "active"; S.lastTick = performance.now(); S.lastMoveAt = Date.now(); S.lastFix = null;
+    $("lv-pause").textContent = "⏸ השהה"; $("lv-pause").classList.remove("resume");
+  } else {
+    S.state = "paused"; $("lv-ap").classList.remove("on");
+    $("lv-pause").textContent = "▶ המשך"; $("lv-pause").classList.add("resume");
+  }
+  vibrate(30);
+});
+
+(function finishHold() {
+  const btn = $("lv-finish"), fill = $("lv-finish-fill");
+  const HOLD = 1200; let t0 = null, raf = null;
+  const frame = () => {
+    const k = Math.min(1, (performance.now() - t0) / HOLD);
+    fill.style.transform = `scaleX(${k})`;
+    if (k >= 1) { reset(); finishSession(); return; }
+    raf = requestAnimationFrame(frame);
+  };
+  const reset = () => { cancelAnimationFrame(raf); t0 = null; fill.style.transform = "scaleX(0)"; };
+  btn.addEventListener("pointerdown", e => { e.preventDefault(); t0 = performance.now(); raf = requestAnimationFrame(frame); });
+  ["pointerup", "pointercancel", "pointerleave"].forEach(ev => btn.addEventListener(ev, reset));
+})();
+
+function stopEngine() {
+  if (S.watchId != null) { try { navigator.geolocation.clearWatch(S.watchId); } catch (e) {} S.watchId = null; }
+  clearInterval(S.tickId); S.tickId = null;
+  if (S.wakeLock) { try { S.wakeLock.release(); } catch (e) {} S.wakeLock = null; }
+  S.on = false;
+  document.body.style.overflow = "";
+}
+
+function finishSession() {
+  stopEngine();
+  $("scr-live").classList.add("hidden");
+  const sec = Math.round(S.movingMs / 1000);
+  if (S.distM < 30 && sec < 45) {
+    toast("אימון קצר מדי — לא נשמר");
+    showScreen("home"); return;
+  }
+  // decimate path for storage (≤ 360 points)
+  let path = S.path;
+  while (path.length > 360) path = path.filter((_, i) => i % 2 === 0 || i === path.length - 1);
+  const w = {
+    id: "w" + Date.now(),
+    ts: S.startTs, mode: S.mode,
+    goal: { type: S.goal.type, value: S.goal.value, achieved: S.goalDone },
+    sec, distM: Math.round(S.distM),
+    kcal: Math.round(S.kcal * 10) / 10,
+    fatG: Math.round(S.fatG * 10) / 10,
+    steps: Math.round(S.distM / strideM(S.mode)),
+    elev: Math.round(S.elevGain),
+    splits: S.splits.map(s => Math.round(s.sec)),
+    path
+  };
+  db.workouts.push(w);
+  saveDB();
+  vibrate([80, 60, 80]);
+  renderAll();
+  openSummary(w, true);
+}
+
+/* ----- wake lock ----- */
+async function grabWakeLock() {
+  try { if ("wakeLock" in navigator) S.wakeLock = await navigator.wakeLock.request("screen"); } catch (e) {}
+}
+document.addEventListener("visibilitychange", () => {
+  if (S.on && document.visibilityState === "visible") grabWakeLock();
+});
+window.addEventListener("beforeunload", e => {
+  if (S.on) { e.preventDefault(); e.returnValue = ""; }
+});
+
+/* =====================================================================
+   SUMMARY / DETAIL
+   ===================================================================== */
+let summaryCtx = { fromHistory: false, id: null };
+function openSummary(w, fresh) {
+  summaryCtx = { fromHistory: !fresh, id: w.id };
+  $("sm-title").textContent = fresh ? "סיכום אימון 🎉" : "פרטי אימון";
+  $("sm-date").textContent = (w.mode === "run" ? "ריצה · " : "הליכה · ") + fmtDate(w.ts);
+  const b = $("sm-badge");
+  if (w.goal.type === "free") {
+    b.className = "badge free"; $("sm-badge-i").textContent = "🎽";
+    $("sm-badge-t").textContent = "אימון חופשי";
+    $("sm-badge-s").textContent = "ללא יעד מוגדר — כל צעד נחשב!";
+  } else {
+    const g = w.goal, lbl = g.type === "time" ? g.value + " דקות" : g.type === "dist" ? g.value + " ק״מ" : g.value + " קק״ל";
+    if (g.achieved) {
+      b.className = "badge ok"; $("sm-badge-i").textContent = "🏆";
+      $("sm-badge-t").textContent = "היעד הושג!";
+      $("sm-badge-s").textContent = "עמדת ביעד של " + lbl + " — כל הכבוד!";
+    } else {
+      b.className = "badge fail"; $("sm-badge-i").textContent = "🎯";
+      $("sm-badge-t").textContent = "היעד לא הושג הפעם";
+      $("sm-badge-s").textContent = "היעד היה " + lbl + " — בפעם הבאה זה שלך!";
+    }
+  }
+  const km = w.distM / 1000, hrs = w.sec / 3600;
+  $("sm-dist").textContent = km.toFixed(2);
+  $("sm-time").textContent = fmtClock(w.sec);
+  $("sm-pace").textContent = km > 0.03 ? fmtPace(w.sec / km) : "—";
+  $("sm-speed").textContent = hrs > 0 ? (km / hrs).toFixed(1) : "—";
+  $("sm-kcal").textContent = Math.round(w.kcal);
+  $("sm-fat").textContent = w.fatG.toFixed(1);
+  $("sm-mets").textContent = hrs > 0 ? (w.kcal / ((db.profile.weight || 80) * hrs)).toFixed(1) : "—";
+  $("sm-steps").textContent = w.steps.toLocaleString("he-IL");
+  $("sm-elev").textContent = w.elev;
+  drawRoute(w.path);
+  drawSplits(w.splits);
+  $("sm-del").classList.toggle("hidden", fresh);
+  $("sm-gpx").classList.toggle("hidden", !w.path || w.path.length < 2);
+  $("scr-summary").classList.remove("hidden");
+  $("scr-summary").scrollTop = 0;
+}
+$("sm-close").addEventListener("click", () => {
+  $("scr-summary").classList.add("hidden");
+  showScreen(summaryCtx.fromHistory ? "history" : "home");
+});
+
+function drawRoute(path) {
+  const card = $("sm-route-card"), svg = $("sm-route");
+  if (!path || path.length < 2) { card.classList.add("hidden"); return; }
+  card.classList.remove("hidden");
+  const W = 320, H = 190, PAD = 14;
+  const lats = path.map(p => p[0]), lngs = path.map(p => p[1]);
+  const latMid = (Math.min(...lats) + Math.max(...lats)) / 2;
+  const kx = Math.cos(latMid * Math.PI / 180);
+  const xs = path.map(p => p[1] * kx), ys = path.map(p => p[0]);
+  const xMin = Math.min(...xs), xMax = Math.max(...xs);
+  const yMin = Math.min(...ys), yMax = Math.max(...ys);
+  const sc = Math.min((W - 2 * PAD) / Math.max(1e-9, xMax - xMin),
+                      (H - 2 * PAD) / Math.max(1e-9, yMax - yMin));
+  const ox = (W - (xMax - xMin) * sc) / 2, oy = (H - (yMax - yMin) * sc) / 2;
+  const px = i => ox + (xs[i] - xMin) * sc;
+  const py = i => H - (oy + (ys[i] - yMin) * sc);
+  let dStr = "";
+  for (let i = 0; i < path.length; i++) dStr += (i ? "L" : "M") + px(i).toFixed(1) + " " + py(i).toFixed(1);
+  svg.innerHTML =
+    `<path d="${dStr}" fill="none" stroke="#2F7A3D" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" opacity=".92"/>` +
+    `<circle cx="${px(0)}" cy="${py(0)}" r="6" fill="#2F7A3D" stroke="#fff" stroke-width="2.5"/>` +
+    `<circle cx="${px(path.length-1)}" cy="${py(path.length-1)}" r="6" fill="#C64B3C" stroke="#fff" stroke-width="2.5"/>`;
+}
+function drawSplits(splits) {
+  const t = $("sm-splits-t"), box = $("sm-splits");
+  if (!splits || !splits.length) { t.classList.add("hidden"); box.classList.add("hidden"); return; }
+  t.classList.remove("hidden"); box.classList.remove("hidden");
+  const fastest = Math.min(...splits);
+  box.innerHTML = splits.map((s, i) =>
+    `<div class="split-row"><span class="k">ק״מ ${i + 1}</span>` +
+    `<span class="split-bar"><i style="width:${Math.round(fastest / s * 100)}%"></i></span>` +
+    `<span class="v num">${fmtPace(s)}</span></div>`
+  ).join("");
+}
+
+$("sm-share").addEventListener("click", () => {
+  const w = db.workouts.find(x => x.id === summaryCtx.id);
+  if (!w) return;
+  const km = (w.distM / 1000).toFixed(2);
+  const txt = `${w.mode === "run" ? "🏃 ריצה" : "🚶 הליכה"} — ${km} ק״מ ב-${fmtClock(w.sec)}\n` +
+    `⚡ קצב ${fmtPace(w.sec / Math.max(0.01, w.distM / 1000))} דק׳/ק״מ · 🔥 ${Math.round(w.kcal)} קק״ל · 👣 ${w.steps.toLocaleString("he-IL")} צעדים` +
+    (w.goal.type !== "free" && w.goal.achieved ? "\n🏆 היעד הושג!" : "");
+  if (navigator.share) navigator.share({ text: txt }).catch(() => {});
+  else { navigator.clipboard && navigator.clipboard.writeText(txt); toast("הסיכום הועתק 📋"); }
+});
+$("sm-gpx").addEventListener("click", () => {
+  const w = db.workouts.find(x => x.id === summaryCtx.id);
+  if (!w || !w.path || w.path.length < 2) { toast("אין מסלול לייצוא"); return; }
+  const pts = w.path.map(p => `<trkpt lat="${p[0]}" lon="${p[1]}"></trkpt>`).join("\n      ");
+  const gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="run-tracker" xmlns="http://www.topografix.com/GPX/1/1">\n  <trk><name>${w.mode} ${new Date(w.ts).toISOString()}</name><trkseg>\n      ${pts}\n  </trkseg></trk>\n</gpx>`;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([gpx], { type: "application/gpx+xml" }));
+  a.download = `${w.mode}-${new Date(w.ts).toISOString().slice(0, 10)}.gpx`;
+  a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+});
+$("sm-del").addEventListener("click", () => {
+  if (!confirm("למחוק את האימון הזה לצמיתות?")) return;
+  db.workouts = db.workouts.filter(x => x.id !== summaryCtx.id);
+  saveDB(); renderAll();
+  $("scr-summary").classList.add("hidden");
+  showScreen("history");
+  toast("האימון נמחק");
+});
+
+/* =====================================================================
+   HOME / HISTORY / STATS / PROFILE rendering
+   ===================================================================== */
+function showScreen(name) {
+  ["home", "history", "stats", "profile"].forEach(s => {
+    $("scr-" + s).classList.toggle("hidden", s !== name);
+  });
+  document.querySelectorAll("#nav button").forEach(b =>
+    b.classList.toggle("on", b.dataset.scr === name));
+  window.scrollTo(0, 0);
+}
+document.querySelectorAll("#nav button").forEach(b =>
+  b.addEventListener("click", () => showScreen(b.dataset.scr)));
+
+function weekStart(ts) {
+  const d = new Date(ts); d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - d.getDay());          // Sunday start (IL)
+  return d.getTime();
+}
+function thisWeekKm() {
+  const ws = weekStart(Date.now());
+  return db.workouts.filter(w => w.ts >= ws).reduce((a, w) => a + w.distM, 0) / 1000;
+}
+function streakDays() {
+  if (!db.workouts.length) return 0;
+  const days = new Set(db.workouts.map(w => new Date(w.ts).toDateString()));
+  let n = 0; const d = new Date();
+  if (!days.has(d.toDateString())) d.setDate(d.getDate() - 1);
+  while (days.has(d.toDateString())) { n++; d.setDate(d.getDate() - 1); }
+  return n;
+}
+
+function renderHome() {
+  const h = new Date().getHours();
+  $("hm-hello").textContent = (h < 5 ? "לילה טוב" : h < 12 ? "בוקר טוב" : h < 18 ? "צהריים טובים" : "ערב טוב") + " 👋";
+  const now = new Date();
+  $("hm-date").textContent = `יום ${HDAYS[now.getDay()]}, ${now.getDate()}.${now.getMonth() + 1}.${now.getFullYear()}`;
+
+  const goal = db.profile.weeklyGoalKm || 15, km = thisWeekKm();
+  $("hm-week-km").textContent = km < 10 ? km.toFixed(1) : Math.round(km);
+  const C = 295.3;
+  $("hm-ring").style.strokeDashoffset = C * (1 - Math.min(1, km / goal));
+  $("hm-week-sub").textContent = km >= goal
+    ? `עברת את היעד של ${goal} ק״מ — מדהים! 🎉`
+    : `נותרו ${(goal - km).toFixed(1)} ק״מ ליעד של ${goal} ק״מ`;
+  const st = streakDays();
+  $("hm-week-streak").textContent = st >= 2 ? `🔥 רצף של ${st} ימים` : "";
+
+  const recent = [...db.workouts].sort((a, b) => b.ts - a.ts).slice(0, 3);
+  $("hm-recent").innerHTML = recent.length
+    ? recent.map(itemHTML).join("")
+    : `<div class="card empty"><span class="big">👟</span>עוד אין אימונים.<br>לחצו על ״התחל אימון״ וצאו לדרך!</div>`;
+  bindItems($("hm-recent"));
+}
+
+function itemHTML(w) {
+  const km = (w.distM / 1000).toFixed(2);
+  const d = new Date(w.ts);
+  const trophy = w.goal && w.goal.type !== "free" && w.goal.achieved ? " 🏆" : "";
+  return `<button class="w-item" data-id="${w.id}">
+    <span class="w-ico ${w.mode}">${w.mode === "run" ? "🏃" : "🚶"}</span>
+    <span class="w-mid"><b>${w.mode === "run" ? "ריצה" : "הליכה"}${trophy}</b>
+    <span>${HDAYS[d.getDay()]} ${d.getDate()}.${d.getMonth() + 1} · ${fmtClock(w.sec)} · ${Math.round(w.kcal)} קק״ל</span></span>
+    <span class="w-kpi"><b class="num">${km}</b><span>ק״מ</span></span>
+  </button>`;
+}
+function bindItems(root) {
+  root.querySelectorAll(".w-item").forEach(el => el.addEventListener("click", () => {
+    const w = db.workouts.find(x => x.id === el.dataset.id);
+    if (w) openSummary(w, false);
+  }));
+}
+
+function renderHistory() {
+  const list = [...db.workouts].sort((a, b) => b.ts - a.ts);
+  $("hi-sub").textContent = list.length ? `${list.length} אימונים · ${(list.reduce((a, w) => a + w.distM, 0) / 1000).toFixed(1)} ק״מ סה״כ` : "";
+  if (!list.length) {
+    $("hi-list").innerHTML = `<div class="card empty"><span class="big">📅</span>ההיסטוריה ריקה — האימון הראשון מחכה לך!</div>`;
+    return;
+  }
+  let html = "", lastMonth = "";
+  const MON = ["ינואר","פברואר","מרץ","אפריל","מאי","יוני","יולי","אוגוסט","ספטמבר","אוקטובר","נובמבר","דצמבר"];
+  list.forEach(w => {
+    const d = new Date(w.ts), mk = MON[d.getMonth()] + " " + d.getFullYear();
+    if (mk !== lastMonth) { html += `<div class="sec-t">${mk}</div>`; lastMonth = mk; }
+    html += itemHTML(w);
+  });
+  $("hi-list").innerHTML = html;
+  bindItems($("hi-list"));
+}
+
+function renderStats() {
+  const ws = db.workouts;
+  const totKm = ws.reduce((a, w) => a + w.distM, 0) / 1000;
+  const totH = ws.reduce((a, w) => a + w.sec, 0) / 3600;
+  const totK = ws.reduce((a, w) => a + w.kcal, 0);
+  $("st-km").textContent = totKm.toFixed(1);
+  $("st-time").textContent = totH.toFixed(1);
+  $("st-kcal").textContent = Math.round(totK).toLocaleString("he-IL");
+
+  /* weekly bar chart — last 8 weeks, single series (#2F7A3D, palette-validated) */
+  const weeks = [];
+  const w0 = weekStart(Date.now());
+  for (let i = 7; i >= 0; i--) {
+    const start = w0 - i * 7 * 86400000;
+    const km = ws.filter(w => weekStart(w.ts) === start).reduce((a, w) => a + w.distM, 0) / 1000;
+    weeks.push({ start, km });
+  }
+  const maxKm = Math.max(1, ...weeks.map(w => w.km));
+  const CW = 320, CH = 170, PB = 26, PT = 22, bw = 24, gap = (CW - 8 * bw) / 9;
+  let bars = "";
+  weeks.forEach((wk, i) => {
+    const x = gap + i * (bw + gap);
+    const h = Math.max(wk.km > 0 ? 5 : 2, (CH - PB - PT) * wk.km / maxKm);
+    const y = CH - PB - h;
+    const d = new Date(wk.start);
+    const isCur = i === weeks.length - 1;
+    bars += `<rect x="${x}" y="${y}" width="${bw}" height="${h}" rx="4"
+       fill="${wk.km > 0 ? "#2F7A3D" : "rgba(0,0,0,.08)"}" opacity="${isCur ? 1 : .82}"/>`;
+    if (wk.km > 0) bars += `<text x="${x + bw / 2}" y="${y - 6}" text-anchor="middle"
+       font-size="10" font-weight="700" fill="#2F3033">${wk.km < 10 ? wk.km.toFixed(1) : Math.round(wk.km)}</text>`;
+    bars += `<text x="${x + bw / 2}" y="${CH - 8}" text-anchor="middle" font-size="9.5"
+       fill="#7C7F85">${d.getDate()}.${d.getMonth() + 1}</text>`;
+  });
+  $("st-chart").innerHTML =
+    `<svg viewBox="0 0 ${CW} ${CH}" style="width:100%;display:block" role="img" aria-label="מרחק שבועי בקילומטרים, 8 שבועות אחרונים">
+      <line x1="0" y1="${CH - PB}" x2="${CW}" y2="${CH - PB}" stroke="rgba(0,0,0,.13)" stroke-width="1"/>
+      ${bars}
+    </svg>`;
+
+  /* records */
+  const recBox = $("st-records");
+  if (!ws.length) { recBox.innerHTML = `<div class="empty">אין עדיין נתונים</div>`; return; }
+  const longest = ws.reduce((a, w) => w.distM > a.distM ? w : a);
+  const paceable = ws.filter(w => w.distM >= 1000);
+  const fastest = paceable.length ? paceable.reduce((a, w) => (w.sec / w.distM) < (a.sec / a.distM) ? w : a) : null;
+  const byWeek = {};
+  ws.forEach(w => { const k = weekStart(w.ts); byWeek[k] = (byWeek[k] || 0) + w.distM; });
+  const bestWeek = Math.max(...Object.values(byWeek)) / 1000;
+  const rows = [
+    ["🥇", "המרחק הארוך ביותר", new Date(longest.ts).toLocaleDateString("he-IL"), (longest.distM / 1000).toFixed(2) + " ק״מ"],
+    fastest ? ["⚡", "הקצב המהיר ביותר", "אימון של " + (fastest.distM / 1000).toFixed(1) + " ק״מ", fmtPace(fastest.sec / (fastest.distM / 1000)) + " דק׳/ק״מ"] : null,
+    ["📆", "השבוע הטוב ביותר", "", bestWeek.toFixed(1) + " ק״מ"],
+    ["🔥", "רצף ימים נוכחי", "", streakDays() + " ימים"],
+    ["🎽", "סה״כ אימונים", "", String(ws.length)]
+  ].filter(Boolean);
+  recBox.innerHTML = rows.map(r =>
+    `<div class="rec-row"><span class="i">${r[0]}</span>
+     <span class="t">${r[1]}${r[2] ? `<small>${r[2]}</small>` : ""}</span>
+     <b class="num">${r[3]}</b></div>`).join("");
+}
+
+/* ----- profile ----- */
+function renderProfile() {
+  const p = db.profile;
+  $("pf-weight").value = p.weight; $("pf-height").value = p.height;
+  $("pf-age").value = p.age; $("pf-sex").value = p.sex;
+  $("pf-goal").value = p.weeklyGoalKm;
+  $("pf-autopause").checked = p.autoPause; $("pf-voice").checked = p.voice;
+}
+[["pf-weight","weight",1],["pf-height","height",1],["pf-age","age",1],["pf-goal","weeklyGoalKm",1]].forEach(([id, key]) => {
+  $(id).addEventListener("change", e => {
+    const v = parseFloat(e.target.value);
+    if (isFinite(v) && v > 0) { db.profile[key] = v; saveDB(); renderHome(); }
+  });
+});
+$("pf-sex").addEventListener("change", e => { db.profile.sex = e.target.value; saveDB(); });
+$("pf-autopause").addEventListener("change", e => { db.profile.autoPause = e.target.checked; saveDB(); });
+$("pf-voice").addEventListener("change", e => { db.profile.voice = e.target.checked; saveDB(); });
+
+$("pf-export").addEventListener("click", () => {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(db, null, 1)], { type: "application/json" }));
+  a.download = "run-tracker-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+  a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  toast("הגיבוי ירד למכשיר ⬇️");
+});
+$("pf-import").addEventListener("click", () => $("pf-file").click());
+$("pf-file").addEventListener("change", e => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try {
+      const d = JSON.parse(r.result);
+      if (!d || !Array.isArray(d.workouts)) throw 0;
+      d.profile = Object.assign({}, DEFAULT_DB.profile, d.profile || {});
+      db = d; saveDB(); renderAll(); renderProfile();
+      toast("הגיבוי נטען בהצלחה ✅");
+    } catch (err) { toast("קובץ גיבוי לא תקין"); }
+  };
+  r.readAsText(f); e.target.value = "";
+});
+$("pf-wipe").addEventListener("click", () => {
+  if (!confirm("למחוק את כל האימונים וההגדרות? אין דרך חזרה.")) return;
+  db = JSON.parse(JSON.stringify(DEFAULT_DB));
+  saveDB(); renderAll(); renderProfile();
+  toast("כל הנתונים נמחקו");
+});
+
+/* ----- home controls ----- */
+document.querySelectorAll("#mode-seg button").forEach(b => b.addEventListener("click", () => {
+  uiMode = b.dataset.mode;
+  document.querySelectorAll("#mode-seg button").forEach(x => x.classList.toggle("on", x === b));
+  $("btn-start").classList.toggle("run", uiMode === "run");
+  $("btn-start").textContent = uiMode === "run" ? "▶ התחל ריצה" : "▶ התחל אימון";
+}));
+document.querySelectorAll("#goal-chips button").forEach(b => b.addEventListener("click", () => {
+  uiGoal.type = b.dataset.g;
+  document.querySelectorAll("#goal-chips button").forEach(x => x.classList.toggle("on", x === b));
+  $("goal-step").classList.toggle("hidden", uiGoal.type === "free");
+  renderGoalVal();
+}));
+function renderGoalVal() {
+  if (uiGoal.type === "free") return;
+  const cfg = GOAL_CFG[uiGoal.type];
+  const v = uiGoal[uiGoal.type];
+  $("goal-val").textContent = cfg.step < 1 ? v.toFixed(1).replace(/\.0$/, "") : String(v);
+  $("goal-un").textContent = cfg.unit;
+}
+$("goal-plus").addEventListener("click", () => bumpGoal(1));
+$("goal-minus").addEventListener("click", () => bumpGoal(-1));
+function bumpGoal(dir) {
+  if (uiGoal.type === "free") return;
+  const cfg = GOAL_CFG[uiGoal.type];
+  uiGoal[uiGoal.type] = Math.min(cfg.max, Math.max(cfg.min,
+    Math.round((uiGoal[uiGoal.type] + dir * cfg.step) * 10) / 10));
+  renderGoalVal(); vibrate(15);
+}
+$("btn-start").addEventListener("click", startFlow);
+
+/* ----- boot ----- */
+function renderAll() { renderHome(); renderHistory(); renderStats(); }
+renderAll(); renderProfile();
+</script>
+</body>
+</html>
