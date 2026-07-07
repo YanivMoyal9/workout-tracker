@@ -4,6 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#E7E5E0" />
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <title>האפליקציות שלי</title>
 <style>
   html,body{margin:0;background:#E7E5E0;color:#2F3033;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;min-height:100vh}
@@ -19,12 +20,34 @@
   .t span{font-size:13px;color:#7C7F85}
   .arr{margin-inline-start:auto;color:#6AA84F;font-size:22px}
   footer{text-align:center;color:#9A9DA3;font-size:12px;margin-top:28px}
+  /* ---- account card ---- */
+  .acct{background:#FBFAF8;border-radius:18px;padding:16px 18px;margin:0 0 6px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+  .acct h3{margin:0 0 4px;font-size:15px;font-weight:800;display:flex;align-items:center;gap:8px}
+  .acct p{margin:0 0 10px;font-size:12.5px;color:#7C7F85;line-height:1.55}
+  .acct label{display:block;margin:9px 0}
+  .acct label span{display:block;font-size:12px;font-weight:700;margin-bottom:4px}
+  .acct input{width:100%;box-sizing:border-box;padding:11px 12px;border-radius:10px;border:1px solid #D5D3CE;
+    background:#fff;color:#2F3033;font-size:14px;font-family:inherit;text-align:left;direction:ltr}
+  .acct .row{display:flex;gap:9px;margin-top:10px}
+  .acct button{font-family:inherit;cursor:pointer;border:none}
+  .acct .btn{flex:1;padding:12px;border-radius:12px;font-size:14px;font-weight:800;background:#EDEBE6;color:#2F3033}
+  .acct .btn.primary{background:#2F7A3D;color:#fff}
+  .acct .link{display:block;width:100%;background:none;padding:8px;margin-top:2px;text-align:center;
+    font-size:12.5px;font-weight:700;color:#2F7A3D;text-decoration:underline}
+  .acct .status{text-align:center;font-size:12.5px;font-weight:700;color:#7C7F85;
+    background:rgba(0,0,0,.05);border-radius:10px;padding:9px;margin-top:10px}
+  .acct .who{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .acct .who b{font-size:14px;display:block}
+  .acct .who small{color:#7C7F85;font-size:12px;direction:ltr;display:block}
+  .acct .chip{padding:9px 14px;border-radius:999px;background:rgba(0,0,0,.07);font-size:12.5px;font-weight:700;color:#2F3033}
 </style>
 </head>
 <body>
   <div class="wrap">
     <h1>👋 האפליקציות שלי</h1>
     <p class="sub">בחר אפליקציה כדי להתחיל</p>
+
+    <div class="acct" id="acct" hidden></div>
 
     <a class="card" href="food-tracker/index.html">
       <div class="em">🥗</div>
@@ -44,7 +67,131 @@
       <div class="arr">‹</div>
     </a>
 
-    <footer>נבנה עם Claude · הנתונים נשמרים מקומית במכשיר</footer>
+    <footer>נבנה עם Claude · חשבון אחד לכל האפליקציות · הנתונים מסתנכרנים לענן</footer>
   </div>
+
+<script>
+"use strict";
+/* ---- One account for all apps (Supabase Auth) ----
+   All apps live on this origin and share the same Supabase project, so a
+   session created here is picked up automatically by the food and run apps.
+   This card also hosts the forgot-password flow: reset emails redirect back
+   to this page, which shows a set-new-password form on PASSWORD_RECOVERY. */
+const SUPA_URL = "https://xgorkdbiptrhdykplodn.supabase.co";
+const SUPA_KEY = "sb_publishable_ZZ-rsD9U9pKI35fbwewnPg_SlYt0Y2m";
+let _sb = null, _user = null, _recovery = false, _msg = "", _tries = 0;
+const $ = id => document.getElementById(id);
+function client() {
+  if (_sb) return _sb;
+  if (!window.supabase) return null;
+  try {
+    _sb = window.supabase.createClient(SUPA_URL, SUPA_KEY,
+      { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
+  } catch (e) { return null; }
+  return _sb;
+}
+function init() {
+  const sb = client();
+  if (!sb) { if (++_tries < 40) setTimeout(init, 500); return; }
+  sb.auth.getSession().then(({ data }) => {
+    _user = data && data.session ? data.session.user : null; render();
+  }).catch(render);
+  try {
+    sb.auth.onAuthStateChange((ev, sess) => {
+      _user = sess ? sess.user : null;
+      if (ev === "PASSWORD_RECOVERY") _recovery = true;
+      render();
+    });
+  } catch (e) {}
+  render();
+}
+async function signIn() {
+  const sb = client(); if (!sb) return;
+  const email = ($("ac-email").value || "").trim(), pass = $("ac-pass").value;
+  if (!email || !pass) { _msg = "יש להזין אימייל וסיסמה"; render(); return; }
+  _msg = "מתחבר…"; render();
+  const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
+  if (error) { _msg = "התחברות נכשלה: " + error.message; render(); return; }
+  _user = data.user; _msg = "מחובר ✓"; render();
+}
+async function signUp() {
+  const sb = client(); if (!sb) return;
+  const email = ($("ac-email").value || "").trim(), pass = $("ac-pass").value;
+  if (!email || (pass || "").length < 6) { _msg = "אימייל + סיסמה של 6 תווים לפחות"; render(); return; }
+  _msg = "יוצר חשבון…"; render();
+  const { data, error } = await sb.auth.signUp({ email, password: pass });
+  if (error) { _msg = "הרשמה נכשלה: " + error.message; render(); return; }
+  if (data.user && !data.session) { _msg = "נשלח מייל אימות — אשרו אותו ואז התחברו"; render(); return; }
+  _user = data.user; _msg = "החשבון נוצר ✓"; render();
+}
+async function signOut() {
+  const sb = client(); if (!sb) return;
+  try { await sb.auth.signOut(); } catch (e) {}
+  _user = null; _recovery = false; _msg = ""; render();
+}
+async function resetPass() {
+  const sb = client(); if (!sb) return;
+  const email = ($("ac-email").value || "").trim();
+  if (!email) { _msg = "יש להזין אימייל בשדה למעלה ואז ללחוץ שוב"; render(); return; }
+  _msg = "שולח קישור איפוס…"; render();
+  const { error } = await sb.auth.resetPasswordForEmail(email,
+    { redirectTo: location.origin + location.pathname });
+  _msg = error ? "שליחת האיפוס נכשלה: " + error.message
+               : "נשלח קישור איפוס אל " + email + " — פתחו אותו בטלפון ותתבקשו לבחור סיסמה חדשה";
+  render();
+}
+async function setNewPass() {
+  const sb = client(); if (!sb) return;
+  const np = $("ac-newpass").value;
+  if (!np || np.length < 6) { _msg = "סיסמה של 6 תווים לפחות"; render(); return; }
+  _msg = "מעדכן סיסמה…"; render();
+  const { error } = await sb.auth.updateUser({ password: np });
+  if (error) { _msg = "עדכון הסיסמה נכשל: " + error.message; }
+  else { _recovery = false; _msg = "הסיסמה עודכנה ✓ — אפשר להיכנס לכל האפליקציות"; }
+  render();
+}
+function render() {
+  const box = $("acct");
+  if (!window.supabase && _tries >= 40) { box.hidden = true; return; }
+  box.hidden = false;
+  if (_recovery && _user) {
+    box.innerHTML =
+      `<h3>🔑 בחירת סיסמה חדשה</h3>
+       <p>עבור <b dir="ltr">${_user.email || ""}</b> — הסיסמה החדשה תשמש לכל האפליקציות.</p>
+       <label><span>סיסמה חדשה (6 תווים לפחות)</span><input id="ac-newpass" type="password" autocomplete="new-password"></label>
+       <div class="row"><button class="btn primary" id="ac-set">שמירת הסיסמה</button></div>
+       ${_msg ? `<div class="status">${_msg}</div>` : ""}`;
+    $("ac-set").addEventListener("click", setNewPass);
+    return;
+  }
+  if (_user) {
+    box.innerHTML =
+      `<div class="who">
+         <div><b>👤 מחובר לחשבון</b><small>${_user.email || ""}</small></div>
+         <button class="chip" id="ac-out">התנתקות</button>
+       </div>
+       ${_msg ? `<div class="status">${_msg}</div>` : ""}`;
+    $("ac-out").addEventListener("click", signOut);
+    return;
+  }
+  const keepE = ($("ac-email") || {}).value || "", keepP = ($("ac-pass") || {}).value || "";
+  box.innerHTML =
+    `<h3>👤 החשבון שלי</h3>
+     <p>התחברות אחת כאן תופסת לכל האפליקציות — הנתונים של כל אפליקציה יישמרו בענן לפי המשתמש שלך.</p>
+     <label><span>אימייל</span><input id="ac-email" type="email" autocomplete="email"></label>
+     <label><span>סיסמה</span><input id="ac-pass" type="password" autocomplete="current-password"></label>
+     <div class="row">
+       <button class="btn primary" id="ac-in">התחברות</button>
+       <button class="btn" id="ac-up">הרשמה</button>
+     </div>
+     <button class="link" id="ac-forgot">שכחתי סיסמה — שלחו לי קישור איפוס למייל</button>
+     <div class="status">${_msg || "לא מחובר — הנתונים נשמרים מקומית בלבד"}</div>`;
+  $("ac-email").value = keepE; $("ac-pass").value = keepP;
+  $("ac-in").addEventListener("click", signIn);
+  $("ac-up").addEventListener("click", signUp);
+  $("ac-forgot").addEventListener("click", resetPass);
+}
+init();
+</script>
 </body>
 </html>
