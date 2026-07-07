@@ -9,6 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
 <link rel="manifest" href="run-manifest.json" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🏃%3C/text%3E%3C/svg%3E" />
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <title>הליכה וריצה</title>
 <style>
   :root{
@@ -135,6 +136,21 @@
   .p-btn{display:block;width:100%;padding:13px;margin:9px 0;border-radius:13px;background:rgba(0,0,0,.06);
     font-size:14px;font-weight:700;text-align:center}
   .p-btn.danger{background:rgba(198,75,60,.1);color:var(--red)}
+  .p-btn.primary{background:var(--green-d);color:#fff}
+  .sync-help,.sync-note{font-size:13px;color:var(--muted);line-height:1.6;margin:2px 0 10px}
+  .sync-fld{display:block;margin:9px 0}
+  .sync-fld span{display:block;font-size:12px;font-weight:700;margin-bottom:4px}
+  .sync-fld input{width:100%;padding:11px 12px;border-radius:10px;border:1px solid rgba(0,0,0,.14);
+    background:#fff;color:var(--ink);font-size:14px;text-align:left}
+  .sync-actions{display:flex;gap:9px}
+  .sync-actions .p-btn{margin:9px 0 4px}
+  .sync-status{text-align:center;font-size:12.5px;font-weight:700;color:var(--muted);
+    background:rgba(0,0,0,.05);border-radius:10px;padding:9px;margin:8px 0 2px}
+  .sync-chip{padding:9px 14px;border-radius:999px;background:rgba(0,0,0,.07);font-size:12.5px;font-weight:700}
+  .sync-sql{margin-top:10px;font-size:12.5px}
+  .sync-sql summary{cursor:pointer;font-weight:700;color:var(--muted)}
+  .sync-sql pre{background:rgba(0,0,0,.06);border-radius:10px;padding:10px;overflow-x:auto;
+    font-size:10.5px;line-height:1.5;text-align:left}
   .ver{text-align:center;font-size:10.5px;color:var(--faint);margin-top:16px}
 
   /* ============================================================
@@ -339,6 +355,8 @@
       <div class="fld"><label>כריזה קולית <small>עדכון קולי בכל קילומטר</small></label>
         <span class="switch"><input type="checkbox" id="pf-voice"><i></i></span></div>
     </div>
+    <div class="sec-t">☁️ סנכרון ענן</div>
+    <div class="card" id="sync-card"></div>
     <div class="sec-t">גיבוי הנתונים</div>
     <div class="card">
       <button class="p-btn" id="pf-export">⬇️ ייצוא גיבוי (JSON)</button>
@@ -458,7 +476,9 @@ const DB_KEY = "rt_data_v1";
 const DEFAULT_DB = {
   profile: { weight: 80, height: 175, age: 30, sex: "m",
              weeklyGoalKm: 15, autoPause: true, voice: true },
-  workouts: []
+  workouts: [],
+  deleted: [],           // tombstones so cloud merge never resurrects a deleted workout
+  updatedAt: 0
 };
 let db = loadDB();
 function loadDB() {
@@ -468,13 +488,184 @@ function loadDB() {
     const d = JSON.parse(raw);
     if (!d || typeof d !== "object" || !Array.isArray(d.workouts)) throw 0;
     d.profile = Object.assign({}, DEFAULT_DB.profile, d.profile || {});
+    if (!Array.isArray(d.deleted)) d.deleted = [];
     return d;
   } catch (e) { return JSON.parse(JSON.stringify(DEFAULT_DB)); }
 }
 function saveDB() {
+  db.updatedAt = Date.now();
   try { localStorage.setItem(DB_KEY, JSON.stringify(db)); }
   catch (e) { toast("שגיאה בשמירה — ייתכן שהאחסון מלא"); }
+  schedulePush();
 }
+
+/* ---------- Cloud sync (Supabase, per-user) ----------
+   Same project + auth account as the food app (shared origin → an existing
+   login carries over automatically). Each user gets one row in run_data
+   (user_id → full JSON state). Pull merges by union of workout ids with
+   delete-tombstones; push is debounced after every local save. */
+const SUPA_URL = "https://xgorkdbiptrhdykplodn.supabase.co";
+const SUPA_KEY = "sb_publishable_ZZ-rsD9U9pKI35fbwewnPg_SlYt0Y2m";
+const SB_TABLE = "run_data";
+const RUN_SQL = `create table if not exists public.run_data (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  data jsonb not null,
+  updated_at timestamptz not null default now()
+);
+alter table public.run_data enable row level security;
+create policy "run own select" on public.run_data for select using (auth.uid() = user_id);
+create policy "run own insert" on public.run_data for insert with check (auth.uid() = user_id);
+create policy "run own update" on public.run_data for update using (auth.uid() = user_id);`;
+let _sb = null, _sbUser = null, _pushT = null, _pullDone = false,
+    _syncMsg = "", _sbTableMissing = false, _initTries = 0, _lastPull = 0;
+function sbClient() {
+  if (_sb) return _sb;
+  if (!window.supabase) return null;
+  try {
+    _sb = window.supabase.createClient(SUPA_URL, SUPA_KEY,
+      { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
+  } catch (e) { return null; }
+  return _sb;
+}
+function cloudInit() {
+  const sb = sbClient();
+  if (!sb) { if (++_initTries < 40) setTimeout(cloudInit, 500); else renderSyncCard(); return; }
+  sb.auth.getSession().then(({ data }) => {
+    if (data && data.session) { _sbUser = data.session.user; cloudPull(); }
+    renderSyncCard();
+  }).catch(() => renderSyncCard());
+  try {
+    sb.auth.onAuthStateChange((_e, sess) => {
+      const was = !!_sbUser;
+      _sbUser = sess ? sess.user : null;
+      if (_sbUser && !was) cloudPull();
+      renderSyncCard();
+    });
+  } catch (e) {}
+}
+function mergeData(local, cloud) {
+  if (!cloud || typeof cloud !== "object") return local;
+  const del = new Set([...(local.deleted || []), ...(cloud.deleted || [])]);
+  const seen = new Set(), workouts = [];
+  [...(local.workouts || []), ...(cloud.workouts || [])].forEach(w => {
+    if (!w || !w.id || seen.has(w.id) || del.has(w.id)) return;
+    seen.add(w.id); workouts.push(w);
+  });
+  workouts.sort((a, b) => a.ts - b.ts);
+  const newerP = (cloud.updatedAt || 0) > (local.updatedAt || 0) ? cloud.profile : local.profile;
+  return {
+    profile: Object.assign({}, DEFAULT_DB.profile, newerP || {}),
+    workouts,
+    deleted: [...del].slice(-500),
+    updatedAt: Math.max(local.updatedAt || 0, cloud.updatedAt || 0)
+  };
+}
+function sbErrMsg(e) {
+  const m = (e && (e.message || e.error_description)) || String(e);
+  if (/run_data/.test(m) && /(find the table|does not exist|schema cache)/i.test(m)) {
+    _sbTableMissing = true;
+    return "טבלת run_data עדיין לא קיימת בפרויקט — יש להריץ SQL חד-פעמי (ראו למטה)";
+  }
+  return "שגיאת סנכרון: " + m;
+}
+async function cloudPull() {
+  const sb = sbClient(); if (!sb || !_sbUser) return;
+  _syncMsg = "מסנכרן…"; renderSyncCard(); _lastPull = Date.now();
+  try {
+    const { data, error } = await sb.from(SB_TABLE).select("data")
+      .eq("user_id", _sbUser.id).maybeSingle();
+    if (error) throw error;
+    _sbTableMissing = false;
+    if (data && data.data) {
+      db = mergeData(db, data.data);
+      localStorage.setItem(DB_KEY, JSON.stringify(db));
+      renderAll(); renderProfile();
+    }
+    _pullDone = true;
+    cloudPushNow();                    // write the merged union back to the cloud
+  } catch (e) { _pullDone = true; _syncMsg = sbErrMsg(e); renderSyncCard(); }
+}
+function schedulePush() {
+  if (!_sbUser || !_pullDone) return;
+  clearTimeout(_pushT); _pushT = setTimeout(cloudPushNow, 2500);
+}
+async function cloudPushNow() {
+  const sb = sbClient(); if (!sb || !_sbUser) return;
+  try {
+    const { error } = await sb.from(SB_TABLE).upsert(
+      { user_id: _sbUser.id, data: db, updated_at: new Date().toISOString() });
+    if (error) throw error;
+    _sbTableMissing = false;
+    _syncMsg = "סונכרן לענן ✓ " + new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
+  } catch (e) { _syncMsg = sbErrMsg(e); }
+  renderSyncCard();
+}
+async function cloudSignIn() {
+  const sb = sbClient(); if (!sb) { toast("ספריית הסנכרון עדיין נטענת — נסו שוב"); return; }
+  const email = ($("sb-email") || {}).value, pass = ($("sb-pass") || {}).value;
+  if (!email || !pass) { toast("יש להזין אימייל וסיסמה"); return; }
+  _syncMsg = "מתחבר…"; renderSyncCard();
+  const { data, error } = await sb.auth.signInWithPassword({ email: email.trim(), password: pass });
+  if (error) { _syncMsg = "התחברות נכשלה: " + error.message; renderSyncCard(); return; }
+  _sbUser = data.user; _syncMsg = "מחובר ✓"; cloudPull();
+}
+async function cloudSignUp() {
+  const sb = sbClient(); if (!sb) { toast("ספריית הסנכרון עדיין נטענת — נסו שוב"); return; }
+  const email = ($("sb-email") || {}).value, pass = ($("sb-pass") || {}).value;
+  if (!email || (pass || "").length < 6) { toast("אימייל + סיסמה של 6 תווים לפחות"); return; }
+  _syncMsg = "יוצר חשבון…"; renderSyncCard();
+  const { data, error } = await sb.auth.signUp({ email: email.trim(), password: pass });
+  if (error) { _syncMsg = "הרשמה נכשלה: " + error.message; renderSyncCard(); return; }
+  if (data.user && !data.session) { _syncMsg = "נשלח מייל אימות — אשרו אותו ואז התחברו"; renderSyncCard(); return; }
+  _sbUser = data.user; _syncMsg = "החשבון נוצר ✓"; cloudPull();
+}
+async function cloudSignOut() {
+  const sb = sbClient(); if (!sb) return;
+  try { await sb.auth.signOut(); } catch (e) {}
+  _sbUser = null; _pullDone = false; _syncMsg = ""; renderSyncCard();
+}
+function renderSyncCard() {
+  const box = $("sync-card"); if (!box) return;
+  if (!window.supabase && _initTries >= 40) {
+    box.innerHTML = `<div class="sync-note">ספריית הסנכרון לא נטענה (אין רשת?) — הנתונים נשמרים מקומית ויסונכרנו כשיהיה חיבור.</div>`;
+    return;
+  }
+  if (_sbUser) {
+    box.innerHTML =
+      `<div class="fld"><label>☁️ מחובר ומסונכרן<small>${_sbUser.email || ""}</small></label>
+         <button class="sync-chip" id="sb-out">התנתקות</button></div>
+       <div class="sync-status">${_syncMsg || "הנתונים נשמרים בענן אוטומטית אחרי כל אימון, לפי המשתמש שלך."}</div>
+       <button class="p-btn" id="sb-now">🔄 סנכרון עכשיו</button>` +
+      (_sbTableMissing ? sqlHelpHTML() : "");
+    $("sb-out").addEventListener("click", cloudSignOut);
+    $("sb-now").addEventListener("click", cloudPull);
+  } else {
+    box.innerHTML =
+      `<p class="sync-help">התחברו עם אותו חשבון כמו באפליקציית התזונה — וכל האימונים יישמרו בענן לפי המשתמש שלכם ויסתנכרנו בין המכשירים.</p>
+       <label class="sync-fld"><span>אימייל</span><input id="sb-email" type="email" autocomplete="email" dir="ltr"></label>
+       <label class="sync-fld"><span>סיסמה</span><input id="sb-pass" type="password" autocomplete="current-password" dir="ltr"></label>
+       <div class="sync-actions">
+         <button class="p-btn primary" id="sb-in">התחברות</button>
+         <button class="p-btn" id="sb-up">הרשמה</button>
+       </div>
+       <div class="sync-status">${_syncMsg || "לא מחובר — הנתונים נשמרים מקומית בלבד"}</div>`;
+    $("sb-in").addEventListener("click", cloudSignIn);
+    $("sb-up").addEventListener("click", cloudSignUp);
+  }
+}
+function sqlHelpHTML() {
+  return `<details class="sync-sql"><summary>SQL חד-פעמי ליצירת הטבלה (Supabase → SQL Editor)</summary>
+    <pre dir="ltr">${RUN_SQL}</pre>
+    <button class="p-btn" id="sb-copy-sql">📋 העתקת ה-SQL</button></details>`;
+}
+document.addEventListener("click", e => {
+  if (e.target && e.target.id === "sb-copy-sql") {
+    navigator.clipboard && navigator.clipboard.writeText(RUN_SQL).then(() => toast("ה-SQL הועתק 📋"));
+  }
+});
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && _sbUser && Date.now() - _lastPull > 60000 && !S.on) cloudPull();
+});
 
 /* ---------- helpers ---------- */
 const $ = id => document.getElementById(id);
@@ -934,6 +1125,7 @@ $("sm-gpx").addEventListener("click", () => {
 $("sm-del").addEventListener("click", () => {
   if (!confirm("למחוק את האימון הזה לצמיתות?")) return;
   db.workouts = db.workouts.filter(x => x.id !== summaryCtx.id);
+  db.deleted.push(summaryCtx.id);
   saveDB(); renderAll();
   $("scr-summary").classList.add("hidden");
   showScreen("history");
@@ -1126,6 +1318,7 @@ $("pf-file").addEventListener("change", e => {
       const d = JSON.parse(r.result);
       if (!d || !Array.isArray(d.workouts)) throw 0;
       d.profile = Object.assign({}, DEFAULT_DB.profile, d.profile || {});
+      if (!Array.isArray(d.deleted)) d.deleted = [];
       db = d; saveDB(); renderAll(); renderProfile();
       toast("הגיבוי נטען בהצלחה ✅");
     } catch (err) { toast("קובץ גיבוי לא תקין"); }
@@ -1133,8 +1326,10 @@ $("pf-file").addEventListener("change", e => {
   r.readAsText(f); e.target.value = "";
 });
 $("pf-wipe").addEventListener("click", () => {
-  if (!confirm("למחוק את כל האימונים וההגדרות? אין דרך חזרה.")) return;
+  if (!confirm("למחוק את כל האימונים וההגדרות? המחיקה תסונכרן גם לענן. אין דרך חזרה.")) return;
+  const tomb = [...db.deleted, ...db.workouts.map(w => w.id)].slice(-500);
   db = JSON.parse(JSON.stringify(DEFAULT_DB));
+  db.deleted = tomb;
   saveDB(); renderAll(); renderProfile();
   toast("כל הנתונים נמחקו");
 });
@@ -1172,7 +1367,7 @@ $("btn-start").addEventListener("click", startFlow);
 
 /* ----- boot ----- */
 function renderAll() { renderHome(); renderHistory(); renderStats(); }
-renderAll(); renderProfile();
+renderAll(); renderProfile(); renderSyncCard(); cloudInit();
 </script>
 </body>
 </html>
