@@ -4,6 +4,11 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#E7E5E0" />
+<script>
+/* Instant auth state (before the SDK loads): the shared Supabase session
+   token unlocks the app cards; the SDK refines this once it's up. */
+try { if (localStorage.getItem("sb-xgorkdbiptrhdykplodn-auth-token")) document.documentElement.classList.add("authed"); } catch (e) {}
+</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <title>האפליקציות שלי</title>
 <style>
@@ -40,6 +45,13 @@
   .acct .who b{font-size:14px;display:block}
   .acct .who small{color:#7C7F85;font-size:12px;direction:ltr;display:block}
   .acct .chip{padding:9px 14px;border-radius:999px;background:rgba(0,0,0,.07);font-size:12.5px;font-weight:700;color:#2F3033}
+  /* apps are visible only when signed in */
+  #apps{display:none}
+  html.authed #apps{display:block}
+  #locknote{display:none;background:#FBFAF8;border-radius:18px;padding:22px 18px;margin:14px 0;
+    box-shadow:0 1px 3px rgba(0,0,0,.05);text-align:center;color:#7C7F85;font-size:13.5px;line-height:1.7}
+  html:not(.authed) #locknote{display:block}
+  #locknote .big{font-size:30px;display:block;margin-bottom:6px}
 </style>
 </head>
 <body>
@@ -49,6 +61,9 @@
 
     <div class="acct" id="acct" hidden></div>
 
+    <div id="locknote"><span class="big">🔒</span>האפליקציות נעולות<br>יש להתחבר לחשבון למעלה כדי להיכנס</div>
+
+    <div id="apps">
     <a class="card" href="food-tracker/index.html">
       <div class="em">🥗</div>
       <div class="t"><b>תזונה חכמה</b><span>מעקב משקל, קלוריות וזיהוי אוכל מתמונה</span></div>
@@ -66,6 +81,7 @@
       <div class="t"><b>הליכה וריצה</b><span>מעקב GPS ברחוב — מרחק, קצב, קלוריות ויעדים</span></div>
       <div class="arr">‹</div>
     </a>
+    </div>
 
     <footer>נבנה עם Claude · חשבון אחד לכל האפליקציות · הנתונים מסתנכרנים לענן</footer>
   </div>
@@ -79,7 +95,7 @@
    to this page, which shows a set-new-password form on PASSWORD_RECOVERY. */
 const SUPA_URL = "https://xgorkdbiptrhdykplodn.supabase.co";
 const SUPA_KEY = "sb_publishable_ZZ-rsD9U9pKI35fbwewnPg_SlYt0Y2m";
-let _sb = null, _user = null, _recovery = false, _msg = "", _tries = 0;
+let _sb = null, _user = null, _recovery = false, _msg = "", _tries = 0, _known = false;
 const $ = id => document.getElementById(id);
 function client() {
   if (_sb) return _sb;
@@ -94,11 +110,11 @@ function init() {
   const sb = client();
   if (!sb) { if (++_tries < 40) setTimeout(init, 500); return; }
   sb.auth.getSession().then(({ data }) => {
-    _user = data && data.session ? data.session.user : null; render();
-  }).catch(render);
+    _user = data && data.session ? data.session.user : null; _known = true; render();
+  }).catch(() => { _known = true; render(); });
   try {
     sb.auth.onAuthStateChange((ev, sess) => {
-      _user = sess ? sess.user : null;
+      _user = sess ? sess.user : null; _known = true;
       if (ev === "PASSWORD_RECOVERY") _recovery = true;
       render();
     });
@@ -152,8 +168,14 @@ async function setNewPass() {
 }
 function render() {
   const box = $("acct");
+  // gate the app cards: once auth state is known it wins over the boot-time token check
+  if (_known) document.documentElement.classList.toggle("authed", !!_user);
   if (!window.supabase && _tries >= 40) { box.hidden = true; return; }
   box.hidden = false;
+  if (!_known && !_user && document.documentElement.classList.contains("authed")) {
+    box.innerHTML = `<div class="status">☁️ בודק חיבור…</div>`;
+    return;
+  }
   if (_recovery && _user) {
     box.innerHTML =
       `<h3>🔑 בחירת סיסמה חדשה</h3>
