@@ -2,6 +2,10 @@
 <html lang="he" dir="rtl">
 <head>
 <meta charset="UTF-8" />
+<script>
+/* auth gate: without the shared login (hub account) go back to the hub */
+try { if (!localStorage.getItem("sb-xgorkdbiptrhdykplodn-auth-token")) location.replace("../index.html"); } catch (e) { location.replace("../index.html"); }
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#E7E5E0" />
 <title>תזונה חכמה — מעקב משקל וקלוריות</title>

@@ -4,6 +4,10 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#E7E5E0" />
+<script>
+/* auth gate: without the shared login (hub account) go back to the hub */
+try { if (!localStorage.getItem("sb-xgorkdbiptrhdykplodn-auth-token")) location.replace("index.html"); } catch (e) { location.replace("index.html"); }
+</script>
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -50,6 +54,9 @@
 
   /* ===== Home ===== */
   .home-head{display:flex;align-items:center;justify-content:space-between}
+  #rt-home{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    font-size:21px;text-decoration:none;background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
+  #rt-home:active{transform:scale(.92)}
   .week-card{display:flex;align-items:center;gap:16px}
   .ringwrap{position:relative;width:108px;height:108px;flex:none}
   .ringwrap svg{transform:rotate(-90deg);display:block}
@@ -270,7 +277,7 @@
         <h1 id="hm-hello">שלום 👋</h1>
         <p class="sub" id="hm-date"></p>
       </div>
-      <div style="font-size:34px">🏃</div>
+      <a id="rt-home" href="index.html" aria-label="חזרה לכל האפליקציות">⌂</a>
     </div>
 
     <div class="card week-card">
