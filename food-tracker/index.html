@@ -238,9 +238,45 @@ function mergeData(local, cloud){
     m.recents[n] = (a&&b) ? {...a,...b, count:Math.max(a.count||0,b.count||0), last:Math.max(a.last||0,b.last||0), pin:!!(a.pin||b.pin)} : (a||b); });
   return m;
 }
+/* ---------- Activity from the walk/run app (combined energy metrics) ----------
+   The run tracker stores workouts locally (rt_data_v1) and per-user in the
+   run_data table. Calories burned in workouts are added to the day's calorie
+   budget, so "remaining" reflects food eaten MINUS activity burned. */
+let _runCloud=null, _rtRaw=null, _rtParsed=[];
+function localRunWorkouts(){
+  let raw=null; try{ raw=localStorage.getItem("rt_data_v1"); }catch(e){}
+  if(!raw) return [];
+  if(raw!==_rtRaw){ try{ _rtParsed=JSON.parse(raw).workouts||[]; }catch(e){ _rtParsed=[]; } _rtRaw=raw; }
+  return _rtParsed;
+}
+// same day-keying convention as the food log (UTC ISO date)
+function tsISO(ts){ try{ return new Date(ts).toISOString().slice(0,10); }catch(e){ return ""; } }
+function activityFor(dateISO){
+  const seen=new Set(), a={kcal:0,fat:0,km:0,sec:0,count:0};
+  [...localRunWorkouts(), ...(_runCloud||[])].forEach(w=>{
+    if(!w||!w.id||seen.has(w.id)||tsISO(w.ts)!==dateISO) return;
+    seen.add(w.id);
+    a.kcal+=w.kcal||0; a.fat+=w.fatG||0; a.km+=(w.distM||0)/1000; a.sec+=w.sec||0; a.count++;
+  });
+  a.kcal=Math.round(a.kcal); a.fat=+a.fat.toFixed(1); a.km=+a.km.toFixed(2);
+  return a;
+}
+async function fetchRunCloud(){
+  const sb=sbClient(); if(!sb||!_sbUser) return;
+  try{
+    const { data } = await sb.from('run_data').select('data').eq('user_id',_sbUser.id).maybeSingle();
+    if(data && data.data && Array.isArray(data.data.workouts)){
+      _runCloud=data.data.workouts;
+      if(S.tab==="home") render();
+    }
+  }catch(e){} // table missing / offline — local workouts still count
+}
+document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") fetchRunCloud(); });
+
 async function cloudPull(){
   const sb=sbClient(); if(!sb||!_sbUser) return;
   fetchBridgeKey();   // load the AI bridge key for this logged-in user
+  fetchRunCloud();    // load workouts from the walk/run app for combined metrics
   _syncMsg="מסנכרן..."; if(S.tab==="settings") render();
   try{
     const { data, error } = await sb.from('user_data').select('data').eq('user_id',_sbUser.id).maybeSingle();
@@ -936,10 +972,12 @@ function finishOnboard(){
 /* ---------- Home / today ---------- */
 function renderHome(){
   const t=S.targets, sum=sumDay(), items=todayItems();
-  const left = t.cal - sum.cal;
-  const pct = Math.min(100, Math.round(sum.cal/t.cal*100));
-  const R=78, C=2*Math.PI*R, off=C*(1-Math.min(1,sum.cal/t.cal));
-  const over = sum.cal>t.cal;
+  const act = activityFor(S.viewDate);
+  const budget = t.cal + act.kcal;          // workout burn enlarges the day's budget
+  const left = budget - sum.cal;
+  const pct = Math.min(100, Math.round(sum.cal/budget*100));
+  const R=78, C=2*Math.PI*R, off=C*(1-Math.min(1,sum.cal/budget));
+  const over = sum.cal>budget;
   const macro=(label,val,goal,color)=>{
     const w=Math.min(100,Math.round(val/goal*100));
     return `<div class="macro"><div class="xs muted">${label}</div><b>${val}<span class="xs muted">/${goal}</span></b>
@@ -970,6 +1008,7 @@ function renderHome(){
       <div class="row" style="justify-content:space-around;margin-top:4px">
         <div class="center"><div class="muted xs">נצרכו</div><div class="b">${sum.cal}</div></div>
         <div class="center"><div class="muted xs">יעד</div><div class="b">${t.cal}</div></div>
+        <div class="center"><div class="muted xs">🏃 פעילות</div><div class="b" style="color:var(--green)">${act.kcal?'+'+act.kcal:'0'}</div></div>
         <div class="center"><div class="muted xs">נותרו</div><div class="b" style="color:${left<0?'var(--orange)':'var(--green)'}">${left}</div></div>
       </div>
       <div class="macros">
@@ -979,6 +1018,7 @@ function renderHome(){
       </div>
     </div>
 
+    ${activityCard(act)}
     ${waterCard()}
 
     <div class="row between"><h2>מה אכלת</h2><button class="btn ghost" style="width:auto;padding:6px 10px" onclick="openAdd()">＋ הוסף</button></div>
@@ -990,6 +1030,25 @@ function renderHome(){
     ${renderMeals(left,sum,t)}
     ${renderAdvice(left,sum,t)}
     <div style="height:14px"></div>`;
+}
+function activityCard(act){
+  if(!act.count) return `<div class="card">
+    <div class="row between"><div class="b">🏃 פעילות גופנית</div>
+      <a class="chip" href="../run-tracker.html" style="text-decoration:none">להתחיל אימון ›</a></div>
+    <div class="muted sm" style="margin-top:6px">אין אימונים ביום זה — קלוריות שנשרפות בהליכה/ריצה מתווספות אוטומטית לתקציב היומי.</div>
+  </div>`;
+  const h=Math.floor(act.sec/3600), m=Math.round(act.sec%3600/60);
+  const dur = h ? `${h}:${String(m).padStart(2,"0")} שע׳` : `${m} דק׳`;
+  return `<div class="card">
+    <div class="row between"><div class="b">🏃 פעילות גופנית</div>
+      <div class="muted sm">${act.count===1?'אימון אחד':act.count+' אימונים'} · ${act.km} ק״מ · ${dur}</div></div>
+    <div class="row" style="justify-content:space-around;margin-top:8px">
+      <div class="center"><div class="muted xs">קלוריות שנשרפו</div><div class="b" style="color:var(--green)">🔥 ${act.kcal}</div></div>
+      <div class="center"><div class="muted xs">שומן שנשרף</div><div class="b">${act.fat} גר׳</div></div>
+      <div class="center"><div class="muted xs">מרחק</div><div class="b">${act.km} ק״מ</div></div>
+    </div>
+    <div class="muted xs" style="margin-top:8px;text-align:center">התקציב היומי גדל ב-${act.kcal} קלוריות בזכות הפעילות 💪</div>
+  </div>`;
 }
 function waterCard(){
   const goal=S.targets.water||2000, cur=waterToday();
@@ -1049,7 +1108,7 @@ async function fetchBridgeKey(){
 }
 async function aiMealIdea(){
   if(!aiConfigured()){ toast("נא להוסיף מפתח API או כתובת שרת בהגדרות"); closeSheet(); go('settings'); return; }
-  const t=S.targets, sum=sumDay(), left=t.cal-sum.cal;
+  const t=S.targets, sum=sumDay(), actAI=activityFor(S.viewDate), left=t.cal+actAI.kcal-sum.cal;
   document.getElementById("sheet").innerHTML=`<div class="handle"></div>
     <div class="card center"><div class="spin" style="border-color:rgba(106,168,79,.3);border-top-color:var(--green);margin:14px auto 12px"></div>חושב על ארוחה מתאימה...</div>`;
   openSheet();
