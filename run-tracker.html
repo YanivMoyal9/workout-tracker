@@ -147,6 +147,8 @@
   .sync-status{text-align:center;font-size:12.5px;font-weight:700;color:var(--muted);
     background:rgba(0,0,0,.05);border-radius:10px;padding:9px;margin:8px 0 2px}
   .sync-chip{padding:9px 14px;border-radius:999px;background:rgba(0,0,0,.07);font-size:12.5px;font-weight:700}
+  .sync-forgot{display:block;width:100%;text-align:center;padding:8px;margin-top:2px;
+    font-size:12.5px;font-weight:700;color:var(--green-d);text-decoration:underline;background:none}
   .sync-sql{margin-top:10px;font-size:12.5px}
   .sync-sql summary{cursor:pointer;font-weight:700;color:var(--muted)}
   .sync-sql pre{background:rgba(0,0,0,.06);border-radius:10px;padding:10px;overflow-x:auto;
@@ -517,7 +519,8 @@ create policy "run own select" on public.run_data for select using (auth.uid() =
 create policy "run own insert" on public.run_data for insert with check (auth.uid() = user_id);
 create policy "run own update" on public.run_data for update using (auth.uid() = user_id);`;
 let _sb = null, _sbUser = null, _pushT = null, _pullDone = false,
-    _syncMsg = "", _sbTableMissing = false, _initTries = 0, _lastPull = 0;
+    _syncMsg = "", _sbTableMissing = false, _initTries = 0, _lastPull = 0,
+    _recovery = false;
 function sbClient() {
   if (_sb) return _sb;
   if (!window.supabase) return null;
@@ -535,9 +538,10 @@ function cloudInit() {
     renderSyncCard();
   }).catch(() => renderSyncCard());
   try {
-    sb.auth.onAuthStateChange((_e, sess) => {
+    sb.auth.onAuthStateChange((ev, sess) => {
       const was = !!_sbUser;
       _sbUser = sess ? sess.user : null;
+      if (ev === "PASSWORD_RECOVERY") { _recovery = true; showScreen("profile"); }
       if (_sbUser && !was) cloudPull();
       renderSyncCard();
     });
@@ -622,12 +626,42 @@ async function cloudSignUp() {
 async function cloudSignOut() {
   const sb = sbClient(); if (!sb) return;
   try { await sb.auth.signOut(); } catch (e) {}
-  _sbUser = null; _pullDone = false; _syncMsg = ""; renderSyncCard();
+  _sbUser = null; _pullDone = false; _syncMsg = ""; _recovery = false; renderSyncCard();
+}
+async function cloudResetPass() {
+  const sb = sbClient(); if (!sb) { toast("ספריית הסנכרון עדיין נטענת — נסו שוב"); return; }
+  const email = (($("sb-email") || {}).value || "").trim();
+  if (!email) { toast("יש להזין אימייל בשדה למעלה ואז ללחוץ שוב"); return; }
+  _syncMsg = "שולח קישור איפוס…"; renderSyncCard();
+  const { error } = await sb.auth.resetPasswordForEmail(email,
+    { redirectTo: location.origin + location.pathname });
+  _syncMsg = error ? "שליחת האיפוס נכשלה: " + error.message
+                   : "נשלח קישור איפוס אל " + email + " — יש לפתוח אותו בטלפון, והאפליקציה תבקש סיסמה חדשה";
+  renderSyncCard();
+}
+async function cloudSetNewPass() {
+  const sb = sbClient(); if (!sb) return;
+  const np = ($("sb-newpass") || {}).value;
+  if (!np || np.length < 6) { toast("סיסמה של 6 תווים לפחות"); return; }
+  _syncMsg = "מעדכן סיסמה…"; renderSyncCard();
+  const { error } = await sb.auth.updateUser({ password: np });
+  if (error) { _syncMsg = "עדכון הסיסמה נכשל: " + error.message; }
+  else { _recovery = false; _syncMsg = "הסיסמה עודכנה ✓ — מחוברים ומסונכרנים"; toast("הסיסמה עודכנה ✓"); }
+  renderSyncCard();
 }
 function renderSyncCard() {
   const box = $("sync-card"); if (!box) return;
   if (!window.supabase && _initTries >= 40) {
     box.innerHTML = `<div class="sync-note">ספריית הסנכרון לא נטענה (אין רשת?) — הנתונים נשמרים מקומית ויסונכרנו כשיהיה חיבור.</div>`;
+    return;
+  }
+  if (_recovery && _sbUser) {
+    box.innerHTML =
+      `<p class="sync-help">🔑 איפוס סיסמה עבור <b dir="ltr">${_sbUser.email || ""}</b> — בחרו סיסמה חדשה (6 תווים לפחות):</p>
+       <label class="sync-fld"><span>סיסמה חדשה</span><input id="sb-newpass" type="password" autocomplete="new-password" dir="ltr"></label>
+       <button class="p-btn primary" id="sb-setpass">שמירת הסיסמה החדשה</button>
+       <div class="sync-status">${_syncMsg || ""}</div>`;
+    $("sb-setpass").addEventListener("click", cloudSetNewPass);
     return;
   }
   if (_sbUser) {
@@ -641,16 +675,18 @@ function renderSyncCard() {
     $("sb-now").addEventListener("click", cloudPull);
   } else {
     box.innerHTML =
-      `<p class="sync-help">התחברו עם אותו חשבון כמו באפליקציית התזונה — וכל האימונים יישמרו בענן לפי המשתמש שלכם ויסתנכרנו בין המכשירים.</p>
+      `<p class="sync-help">התחברו עם אותו חשבון כמו באפליקציית התזונה — וכל האימונים יישמרו בענן לפי המשתמש שלכם ויסתנכרנו בין המכשירים. אין חשבון? הזינו אימייל וסיסמה חדשה ולחצו ״הרשמה״.</p>
        <label class="sync-fld"><span>אימייל</span><input id="sb-email" type="email" autocomplete="email" dir="ltr"></label>
        <label class="sync-fld"><span>סיסמה</span><input id="sb-pass" type="password" autocomplete="current-password" dir="ltr"></label>
        <div class="sync-actions">
          <button class="p-btn primary" id="sb-in">התחברות</button>
          <button class="p-btn" id="sb-up">הרשמה</button>
        </div>
+       <button class="sync-forgot" id="sb-forgot">שכחתי סיסמה — שלחו לי קישור איפוס למייל</button>
        <div class="sync-status">${_syncMsg || "לא מחובר — הנתונים נשמרים מקומית בלבד"}</div>`;
     $("sb-in").addEventListener("click", cloudSignIn);
     $("sb-up").addEventListener("click", cloudSignUp);
+    $("sb-forgot").addEventListener("click", cloudResetPass);
   }
 }
 function sqlHelpHTML() {
