@@ -633,10 +633,11 @@ async function cloudResetPass() {
   const email = (($("sb-email") || {}).value || "").trim();
   if (!email) { toast("יש להזין אימייל בשדה למעלה ואז ללחוץ שוב"); return; }
   _syncMsg = "שולח קישור איפוס…"; renderSyncCard();
+  // reset lands on the hub page, which hosts the set-new-password form
   const { error } = await sb.auth.resetPasswordForEmail(email,
-    { redirectTo: location.origin + location.pathname });
+    { redirectTo: new URL("./", location.href).href });
   _syncMsg = error ? "שליחת האיפוס נכשלה: " + error.message
-                   : "נשלח קישור איפוס אל " + email + " — יש לפתוח אותו בטלפון, והאפליקציה תבקש סיסמה חדשה";
+                   : "נשלח קישור איפוס אל " + email + " — פתחו אותו בטלפון ותתבקשו לבחור סיסמה חדשה";
   renderSyncCard();
 }
 async function cloudSetNewPass() {
@@ -674,6 +675,7 @@ function renderSyncCard() {
     $("sb-out").addEventListener("click", cloudSignOut);
     $("sb-now").addEventListener("click", cloudPull);
   } else {
+    const keepE = ($("sb-email") || {}).value || "", keepP = ($("sb-pass") || {}).value || "";
     box.innerHTML =
       `<p class="sync-help">התחברו עם אותו חשבון כמו באפליקציית התזונה — וכל האימונים יישמרו בענן לפי המשתמש שלכם ויסתנכרנו בין המכשירים. אין חשבון? הזינו אימייל וסיסמה חדשה ולחצו ״הרשמה״.</p>
        <label class="sync-fld"><span>אימייל</span><input id="sb-email" type="email" autocomplete="email" dir="ltr"></label>
@@ -684,6 +686,7 @@ function renderSyncCard() {
        </div>
        <button class="sync-forgot" id="sb-forgot">שכחתי סיסמה — שלחו לי קישור איפוס למייל</button>
        <div class="sync-status">${_syncMsg || "לא מחובר — הנתונים נשמרים מקומית בלבד"}</div>`;
+    $("sb-email").value = keepE; $("sb-pass").value = keepP;
     $("sb-in").addEventListener("click", cloudSignIn);
     $("sb-up").addEventListener("click", cloudSignUp);
     $("sb-forgot").addEventListener("click", cloudResetPass);
