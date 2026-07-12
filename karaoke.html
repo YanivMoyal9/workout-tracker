@@ -303,8 +303,11 @@ try { if (!localStorage.getItem("sb-xgorkdbiptrhdykplodn-auth-token")) location.
 
     <button class="btn-primary" id="ed-save">שמירה בספרייה</button>
     <button class="btn-danger hidden" id="ed-del">מחיקת השיר מהספרייה</button>
-    <input type="file" id="ed-file" accept="audio/*" class="hidden" />
-    <input type="file" id="ed-lrcinput" accept=".lrc,.txt" class="hidden" />
+    <!-- iOS greys out files whose stored type doesn't map to the accept MIME
+         (common for mp3s saved by downloader/share apps) — explicit extensions
+         alongside audio/* keep them selectable -->
+    <input type="file" id="ed-file" accept="audio/*,.mp3,.m4a,.aac,.wav,.flac,.ogg,.opus,.oga,.aiff,.aif,.caf,.mp4,.weba,.webm,.amr,.3gp" class="hidden" />
+    <input type="file" id="ed-lrcinput" accept=".lrc,.txt,text/plain" class="hidden" />
   </div>
 </div>
 
@@ -1063,7 +1066,10 @@ $("ed-file").addEventListener("change", async e => {
     $("ed-fmeta").textContent = draft.duration ? "משך: " + fmt(draft.duration) : "";
     URL.revokeObjectURL(url);
   };
-  a.onerror = () => URL.revokeObjectURL(url);
+  a.onerror = () => {
+    URL.revokeObjectURL(url);
+    toast("שים לב: הקובץ לא זוהה כשמע — אם הוא לא יתנגן, נסו פורמט אחר (MP3/M4A/WAV)");
+  };
   /* guess "Artist - Title" from the file name */
   if (!$("ed-title").value) {
     const base = f.name.replace(/\.[^.]+$/, "").replace(/[_]+/g, " ").trim();
@@ -1593,6 +1599,14 @@ $("st-rec").addEventListener("click", () => {
 });
 
 /* ---------------- boot ---------------- */
+/* iOS: even extension-based accept can grey out files whose stored type is
+   generic; dropping the filter keeps everything selectable (files are
+   validated by the audio decoder anyway) */
+if (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)) {
+  $("ed-file").removeAttribute("accept");
+  $("ed-lrcinput").removeAttribute("accept");
+}
 renderLib();
 </script>
 </body>
