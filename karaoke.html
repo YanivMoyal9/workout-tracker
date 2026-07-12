@@ -342,7 +342,7 @@ try { if (!localStorage.getItem("sb-xgorkdbiptrhdykplodn-auth-token")) location.
       <div class="val" id="mx-rem-v">100%</div>
     </div>
     <p class="mx-note hidden" id="mx-mononote">⚠️ הקובץ הזה הוא מונו — אי אפשר להפריד ממנו שירה. כדאי קובץ סטריאו או גרסת פלייבק.</p>
-    <p class="mx-note hidden" id="mx-ainote">✨ פועל פלייבק AI (Demucs) — הסליידר עובר בין ההקלטה המקורית לפלייבק באיכות אולפן</p>
+    <p class="mx-note hidden" id="mx-ainote">✨ פועל פלייבק AI (Demucs) — הסליידר עובר בין המקור לפלייבק, ומעל 100% מפעיל ניקוי מוגבר של שאריות שירה</p>
     <div class="mx-row">
       <label>🎹 טון (Key)</label>
       <div class="mx-key">
@@ -745,11 +745,12 @@ const E = {
       tail.connect(n.pitch); tail = n.pitch;
     }
     n.master = ctx.createGain(); n.master.gain.value = .95;
-    /* transparent safety limiter — catches peaks only, never squashes the mix
-       (a -12dB/4:1 compressor here audibly "over-processed" all playback) */
+    /* safety limiter — fully NEUTRAL (ratio 1) while the mic is off, since
+       modern loud masters sit close to 0dBFS and even a -2dB/20:1 limiter
+       audibly grabs them; it arms only when mic/tab input can add level */
     n.comp = ctx.createDynamicsCompressor();
-    n.comp.threshold.value = -2; n.comp.knee.value = 1; n.comp.ratio.value = 20;
     n.comp.attack.value = 0.001; n.comp.release.value = 0.12;
+    this.setLimiter(false);
     n.an = ctx.createAnalyser(); n.an.fftSize = 256; n.an.smoothingTimeConstant = .8;
     tail.connect(n.master); n.master.connect(n.comp); n.comp.connect(n.an);
     n.an.connect(ctx.destination);
@@ -838,6 +839,12 @@ const E = {
     }
   },
   setVolume(v) { this.nodes.master.gain.setTargetAtTime(v, this.ctx.currentTime, .05); },
+  setLimiter(protect) {
+    const c = this.nodes.comp, t = this.ctx.currentTime;
+    c.threshold.setTargetAtTime(protect ? -2 : 0, t, .03);
+    c.knee.setTargetAtTime(protect ? 1 : 0, t, .03);
+    c.ratio.setTargetAtTime(protect ? 20 : 1, t, .03);
+  },
   setKey(k) { this.key = k; this.applyPitch(); },
   setRate(r) {
     if (this.playing) { this.p0 = this.cur(); this.t0 = this.ctx.currentTime; }
@@ -884,12 +891,14 @@ const E = {
     n.micSrc.connect(n.micHp);
     if (c.state === "suspended") { try { await c.resume(); } catch (e) {} }
     this.micOn = true;
+    this.setLimiter(true);
   },
   micStop() {
     if (!this.micOn) return;
     try { this.nodes.micSrc.disconnect(); } catch (e) {}
     if (this.micStream) this.micStream.getTracks().forEach(t => t.stop());
     this.micStream = null; this.micOn = false;
+    this.setLimiter(this.tabOn);
   },
   setMicVol(v) { if (this.nodes.micGain) this.nodes.micGain.gain.setTargetAtTime(v, this.ctx.currentTime, .05); },
   setEcho(v) { if (this.nodes.echoSend) this.nodes.echoSend.gain.setTargetAtTime(v, this.ctx.currentTime, .05); },
@@ -928,6 +937,7 @@ const E = {
     });
     if (this.ctx.state === "suspended") { try { await this.ctx.resume(); } catch (e) {} }
     this.tabOn = true;
+    this.setLimiter(true);
     const st = at.getSettings ? at.getSettings() : {};
     if (!st.suppressLocalAudioPlayback)
       toast("שים לב: הדפדפן לא השתיק את המקור — אם שומעים כפול, מנמיכים את עוצמת הקליפ");
@@ -937,6 +947,7 @@ const E = {
     try { this.nodes.tabSrc.disconnect(); } catch (e) {}
     if (this.tabStream) this.tabStream.getTracks().forEach(t => t.stop());
     this.tabStream = null; this.tabOn = false;
+    this.setLimiter(this.micOn);
   },
 
   /* ---- performance recording (music mix + mic) ---- */
@@ -1291,6 +1302,7 @@ async function runAI(song) {
     } else if (m.type === "done") {
       const blob = new Blob([m.wav], { type: "audio/wav" });
       song.aiBlob = blob; song.aiAt = Date.now(); song.aiQuality = AI.quality;
+      song.aiBackend = m.backend;
       try { await dbPut(song); } catch (e) { finishAI(); toast("שמירת הפלייבק נכשלה: " + e); return; }
       finishAI();
       if (draft && draft.id === song.id) { draft.aiBlob = blob; draft.aiAt = song.aiAt; updateAiCard(); }
@@ -1310,9 +1322,11 @@ function updateAiCard() {
   card.classList.remove("hidden");
   if (AI.quality) setAiQuality(AI.quality);
   else aiDefaultQuality().then(q => { if (!AI.quality) setAiQuality(q); });
-  const qLabel = draft.aiQuality && AI_TIERS[draft.aiQuality] ? " (איכות: " + AI_TIERS[draft.aiQuality].label + ")" : "";
+  const qLabel = (draft.aiQuality && AI_TIERS[draft.aiQuality] ? " (איכות: " + AI_TIERS[draft.aiQuality].label : " (") +
+    (draft.aiBackend ? (draft.aiQuality ? ", " : "") + "מנוע: " + (draft.aiBackend === "webgpu" ? "GPU" : "CPU") : "");
+  const qText = qLabel === " (" ? "" : qLabel + ")";
   $("ed-aistate").textContent = draft.aiBlob
-    ? "✅ קיים פלייבק AI לשיר הזה" + qLabel + " — בבמה, סליידר \"הסרת שירה\" עובד עליו."
+    ? "✅ קיים פלייבק AI לשיר הזה" + qText + " — בבמה, סליידר \"הסרת שירה\" עובד עליו."
     : "";
   $("ed-airun").textContent = draft.aiBlob ? "✨ יצירת הפלייבק מחדש" : "✨ יצירת פלייבק AI";
 }
@@ -1443,7 +1457,10 @@ async function openStage(song) {
   } else {
     $("mx-tabsec").classList.add("hidden");
     remRow.classList.remove("hidden");
-    const removal = (E.mono && !E.ai) ? 0 : (s.removal != null ? s.removal : 1);
+    /* AI mode allows over-subtraction (>100%) to kill vocal residue live */
+    $("mx-rem").max = E.ai ? 125 : 100;
+    let removal = (E.mono && !E.ai) ? 0 : (s.removal != null ? s.removal : 1);
+    removal = Math.min(removal, E.ai ? 1.25 : 1);
     E.setRemoval(removal);
     E.setKey(s.key || 0);
     E.setRate(rate);
@@ -1648,6 +1665,7 @@ function tabUI(on) {
   $("st-viz").classList.toggle("hidden", !on);
   if (on) {
     $("mx-rem").disabled = false;
+    $("mx-rem").max = 100;
     $("mx-rem").value = 100; $("mx-rem-v").textContent = "100%";
     E.setRemoval(1);
     setKeyUI(0);
