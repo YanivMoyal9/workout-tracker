@@ -253,7 +253,8 @@ try { if (!localStorage.getItem("sb-xgorkdbiptrhdykplodn-auth-token")) location.
       </div>
       <div id="ed-ytprev" class="hidden"></div>
       <p class="note">הקליפ מתנגן דרך נגן YouTube הרשמי בתוך האפליקציה, עם המילים מסונכרנות מעליו.
-      הסרת שירה ושינוי טון לא זמינים על YouTube — טיפ: מחפשים ביוטיוב גרסת "קריוקי" או "פלייבק" של השיר, קיימת כמעט לכל שיר.</p>
+      במחשב (כרום/אדג') אפשר להפעיל במיקסר שבבמה <b>הסרת שירה חיה</b> גם על הקליפ — דרך שיתוף אודיו של הכרטיסייה.
+      בטלפון זה לא נתמך — טיפ: מחפשים ביוטיוב גרסת "קריוקי" או "פלייבק" של השיר, קיימת כמעט לכל שיר.</p>
 
       <label class="field"><span>שם השיר</span><input id="ed-title" type="text" /></label>
       <label class="field"><span>אמן/ית</span><input id="ed-artist" type="text" /></label>
@@ -317,6 +318,15 @@ try { if (!localStorage.getItem("sb-xgorkdbiptrhdykplodn-auth-token")) location.
       <label>🔊 עוצמה</label>
       <input type="range" id="mx-vol" min="0" max="120" value="95" />
       <div class="val" id="mx-vol-v">95%</div>
+    </div>
+
+    <div id="mx-tabsec" class="hidden">
+      <div class="mx-sec">הסרת שירה מהקליפ — מחשב בלבד</div>
+      <div class="mx-mic-toggle">
+        <span class="mx-note" style="margin:0">עיבוד חי של הסאונד דרך שיתוף הכרטיסייה, בלי הורדה ובלי שמירה:
+        בוחרים "הכרטיסייה הזו" ומסמנים ✓ "שתף גם אודיו של הכרטיסייה"</span>
+        <button id="mx-tabbtn">הפעלה</button>
+      </div>
     </div>
 
     <div class="mx-sec">מיקרופון</div>
@@ -801,6 +811,50 @@ const E = {
   setEcho(v) { if (this.nodes.echoSend) this.nodes.echoSend.gain.setTargetAtTime(v, this.ctx.currentTime, .05); },
   setReverb(v) { if (this.nodes.revSend) this.nodes.revSend.gain.setTargetAtTime(v * 1.2, this.ctx.currentTime, .05); },
 
+  /* ---- live tab-audio capture (desktop Chrome/Edge) ----
+     Captures this tab's own audio via the browser's screen-share API and
+     runs it through the vocal-removal + pitch graph in real time. Nothing
+     is downloaded or stored — the clip keeps playing in the YouTube
+     player; suppressLocalAudioPlayback mutes the raw feed so only the
+     processed version is heard. */
+  tabOn: false, tabStream: null, onTabEnd: null,
+  async tabStart() {
+    if (this.tabOn) return;
+    await this.ensure();
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: true,
+      audio: { suppressLocalAudioPlayback: true, echoCancellation: false,
+               noiseSuppression: false, autoGainControl: false },
+      preferCurrentTab: true,
+      selfBrowserSurface: "include",
+      systemAudio: "include"
+    });
+    stream.getVideoTracks().forEach(t => t.stop());   /* only the audio is needed */
+    const at = stream.getAudioTracks()[0];
+    if (!at) {
+      stream.getTracks().forEach(t => t.stop());
+      throw new Error("no-audio");
+    }
+    this.tabStream = stream;
+    this.nodes.tabSrc = this.ctx.createMediaStreamSource(new MediaStream([at]));
+    this.nodes.tabSrc.connect(this.nodes.in);
+    at.addEventListener("ended", () => {              /* "stop sharing" from the browser bar */
+      this.tabStop();
+      if (this.onTabEnd) this.onTabEnd();
+    });
+    if (this.ctx.state === "suspended") { try { await this.ctx.resume(); } catch (e) {} }
+    this.tabOn = true;
+    const st = at.getSettings ? at.getSettings() : {};
+    if (!st.suppressLocalAudioPlayback)
+      toast("שים לב: הדפדפן לא השתיק את המקור — אם שומעים כפול, מנמיכים את עוצמת הקליפ");
+  },
+  tabStop() {
+    if (!this.tabOn) return;
+    try { this.nodes.tabSrc.disconnect(); } catch (e) {}
+    if (this.tabStream) this.tabStream.getTracks().forEach(t => t.stop());
+    this.tabStream = null; this.tabOn = false;
+  },
+
   /* ---- performance recording (music mix + mic) ---- */
   recStart() {
     if (this.rec) return false;
@@ -1090,6 +1144,7 @@ const ST = { song: null, lines: null, lineEls: [], activeIdx: -1, raf: 0, recOn:
 async function openStage(song) {
   const isYt = !!song.ytId;
   P.mode = isYt ? "yt" : "file";
+  E.tabStop(); tabUI(false);
   $("stage").classList.remove("hidden");
   $("st-yt").classList.toggle("hidden", !isYt);
   $("st-viz").classList.toggle("hidden", isYt);
@@ -1125,9 +1180,12 @@ async function openStage(song) {
     $("mx-mononote").classList.add("hidden");
     keyRow.classList.add("hidden");
     tempoRow.classList.remove("hidden");
+    $("mx-tabsec").classList.toggle("hidden",
+      !(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia));
     YTP.setRate(rate);
     YTP.setVol(vol / 100);
   } else {
+    $("mx-tabsec").classList.add("hidden");
     remRow.classList.remove("hidden");
     const removal = E.mono ? 0 : (s.removal != null ? s.removal : 1);
     E.setRemoval(removal);
@@ -1214,7 +1272,7 @@ function stTick() {
 }
 
 function drawViz() {
-  if (P.mode === "yt") return;
+  if (P.mode === "yt" && !E.tabOn) return;
   const cv = $("st-viz");
   if (!E.ctx || !E.nodes.an) return;
   const W = cv.clientWidth, H = cv.clientHeight;
@@ -1259,6 +1317,7 @@ $("st-close").addEventListener("click", () => {
   P.pause();
   if (ST.recOn) stopRecording();
   if (E.micOn) micToggle(false);
+  E.tabStop(); tabUI(false);
   wakeLock(false);
   cancelAnimationFrame(ST.raf);
   /* persist per-song mixer settings */
@@ -1320,6 +1379,35 @@ $("mx-micbtn").addEventListener("click", () => micToggle(!E.micOn));
 $("st-mic").addEventListener("click", () => {
   micToggle(!E.micOn);
   if (!E.micOn) $("st-mix").classList.remove("hidden");
+});
+/* live tab-audio processing (vocal removal on the playing clip) */
+function tabUI(on) {
+  $("mx-tabbtn").textContent = on ? "פעיל — לעצירה" : "הפעלה";
+  $("mx-tabbtn").classList.toggle("on", on);
+  if (P.mode !== "yt") return;
+  $("mx-rem").closest(".mx-row").classList.toggle("hidden", !on);
+  $("mx-key-v").closest(".mx-row").classList.toggle("hidden", !(on && E.workletOk));
+  $("st-viz").classList.toggle("hidden", !on);
+  if (on) {
+    $("mx-rem").disabled = false;
+    $("mx-rem").value = 100; $("mx-rem-v").textContent = "100%";
+    E.setRemoval(1);
+    setKeyUI(0);
+  }
+}
+$("mx-tabbtn").addEventListener("click", async () => {
+  if (E.tabOn) { E.tabStop(); tabUI(false); return; }
+  try {
+    await E.tabStart();
+  } catch (e) {
+    toast(e && e.message === "no-audio"
+      ? "לא התקבל אודיו — בחלון הבחירה חייבים לסמן ✓ 'שתף גם אודיו של הכרטיסייה'"
+      : "שיתוף הכרטיסייה בוטל או שהדפדפן לא תומך — הפיצ'ר עובד בכרום/אדג' במחשב");
+    return;
+  }
+  E.onTabEnd = () => tabUI(false);
+  tabUI(true);
+  toast("🎧 עיבוד חי פעיל — שולטים בהסרת השירה ובטון במיקסר");
 });
 $("mx-micvol").addEventListener("input", e => { $("mx-micvol-v").textContent = e.target.value + "%"; E.setMicVol(+e.target.value / 100); });
 $("mx-echo").addEventListener("input", e => { $("mx-echo-v").textContent = e.target.value + "%"; E.setEcho(+e.target.value / 100); });
