@@ -1,0 +1,1347 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#E7E5E0" />
+<script>
+/* auth gate: without the shared login (hub account) go back to the hub */
+try { if (!localStorage.getItem("sb-xgorkdbiptrhdykplodn-auth-token")) location.replace("index.html"); } catch (e) { location.replace("index.html"); }
+</script>
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<link rel="manifest" href="karaoke-manifest.json" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🎤%3C/text%3E%3C/svg%3E" />
+<title>קריוקי חי</title>
+<style>
+  :root{
+    --bg:#E7E5E0; --card:#FBFAF8; --ink:#2F3033; --muted:#7C7F85; --faint:#A0A29A;
+    --green:#6AA84F; --green-d:#2F7A3D; --orange:#D9744F; --red:#C64B3C; --purple:#7B5EA7;
+    --r:18px; --shadow:0 1px 3px rgba(20,19,15,.07);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+    min-height:100vh; overscroll-behavior-y:none}
+  button{font-family:inherit;border:none;cursor:pointer;background:none;color:inherit}
+  input,textarea,select{font-family:inherit}
+  .num{font-variant-numeric:tabular-nums}
+  .hidden{display:none !important}
+
+  #app{max-width:520px;margin:0 auto;padding:14px 16px 40px}
+  .screen{animation:fadein .18s ease}
+  @keyframes fadein{from{opacity:.55;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+  .card{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);padding:16px;margin:12px 0}
+  .sec-t{font-size:11.5px;font-weight:800;color:var(--faint);letter-spacing:.07em;margin:18px 4px 6px}
+  h1{font-size:22px;font-weight:800;margin:6px 2px 2px}
+  .sub{color:var(--muted);font-size:13.5px;margin:0 2px}
+
+  .head{display:flex;align-items:center;justify-content:space-between}
+  .homebtn{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    font-size:21px;text-decoration:none;background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
+  .homebtn:active{transform:scale(.92)}
+
+  /* ===== Library ===== */
+  .song{display:flex;align-items:center;gap:12px;background:var(--card);border-radius:16px;
+    box-shadow:var(--shadow);padding:12px 14px;margin:9px 0}
+  .song .play{width:48px;height:48px;flex:none;border-radius:50%;background:var(--green-d);color:#fff;
+    font-size:19px;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 10px rgba(47,122,61,.3)}
+  .song .play:active{transform:scale(.92)}
+  .song .info{flex:1;min-width:0}
+  .song .info b{font-size:15.5px;font-weight:800;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .song .info span{font-size:12px;color:var(--muted);display:block;margin-top:2px}
+  .song .edit{width:38px;height:38px;flex:none;border-radius:12px;background:rgba(0,0,0,.06);font-size:16px;
+    display:flex;align-items:center;justify-content:center}
+  .badge{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:999px;margin-inline-start:6px;vertical-align:1px}
+  .badge.sync{background:rgba(47,122,61,.12);color:var(--green-d)}
+  .badge.plain{background:rgba(0,0,0,.07);color:var(--muted)}
+
+  #btn-add{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;
+    padding:17px;margin:16px 0 4px;border-radius:20px;background:var(--green-d);color:#fff;
+    font-size:17px;font-weight:800;box-shadow:0 6px 18px rgba(47,122,61,.35);transition:transform .12s}
+  #btn-add:active{transform:scale(.97)}
+  .empty{text-align:center;color:var(--muted);font-size:13.5px;line-height:1.8;padding:26px 14px}
+  .empty .big{font-size:42px;display:block;margin-bottom:6px}
+
+  /* ===== Edit screen ===== */
+  .field{display:block;margin:10px 0}
+  .field span{display:block;font-size:12px;font-weight:700;margin-bottom:4px;color:var(--muted)}
+  .field input,.field textarea{width:100%;padding:11px 12px;border-radius:10px;border:1px solid #D5D3CE;
+    background:#fff;color:var(--ink);font-size:14px}
+  .field textarea{min-height:150px;resize:vertical;direction:ltr;text-align:left;font-size:12.5px;line-height:1.6}
+  .field textarea.rtl-auto{direction:rtl;text-align:right}
+  .rowbtns{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 2px}
+  .rowbtns button{flex:1;min-width:120px;padding:11px 10px;border-radius:12px;background:rgba(0,0,0,.06);
+    font-size:12.5px;font-weight:800;color:var(--ink)}
+  .rowbtns button:active{transform:scale(.97)}
+  .btn-primary{display:block;width:100%;padding:15px;margin:14px 0 6px;border-radius:16px;background:var(--green-d);
+    color:#fff;font-size:16px;font-weight:800;box-shadow:0 4px 14px rgba(47,122,61,.3)}
+  .btn-danger{display:block;width:100%;padding:12px;border-radius:14px;background:none;color:var(--red);
+    font-size:13px;font-weight:800;text-decoration:underline}
+  .filebox{display:flex;align-items:center;gap:12px;background:rgba(0,0,0,.045);border-radius:14px;padding:13px 14px;margin:8px 0}
+  .filebox .em{font-size:26px}
+  .filebox .fi{flex:1;min-width:0}
+  .filebox .fi b{font-size:13.5px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:ltr;text-align:right}
+  .filebox .fi span{font-size:11.5px;color:var(--muted)}
+  .filebox button{padding:9px 14px;border-radius:10px;background:var(--ink);color:#fff;font-size:12px;font-weight:800;flex:none}
+  .note{font-size:11.5px;color:var(--muted);line-height:1.6;margin:6px 2px}
+  .lyr-res{border:1px solid rgba(0,0,0,.08);border-radius:12px;padding:10px 12px;margin:7px 0;background:#fff;cursor:pointer}
+  .lyr-res b{font-size:13.5px;display:block}
+  .lyr-res span{font-size:11.5px;color:var(--muted)}
+  .lyr-res:active{background:rgba(47,122,61,.06)}
+  .or-div{display:flex;align-items:center;gap:10px;color:var(--faint);font-size:11.5px;font-weight:800;margin:14px 0 6px}
+  .or-div::before,.or-div::after{content:"";flex:1;height:1px;background:rgba(0,0,0,.1)}
+  .ytbox{display:flex;gap:8px;margin:8px 0}
+  .ytbox input{flex:1;min-width:0;padding:11px 12px;border-radius:10px;border:1px solid #D5D3CE;background:#fff;
+    color:var(--ink);font-size:13px;direction:ltr;text-align:left}
+  .ytbox button{padding:9px 16px;border-radius:10px;background:var(--red);color:#fff;font-size:12.5px;font-weight:800;flex:none}
+  .ytbox button:active{transform:scale(.96)}
+  #ed-ytprev{display:flex;align-items:center;gap:12px;background:rgba(198,75,60,.07);border-radius:14px;padding:10px 12px;margin:8px 0}
+  #ed-ytprev img{width:86px;border-radius:8px;display:block;background:#000}
+  #ed-ytprev .fi{flex:1;min-width:0}
+  #ed-ytprev .fi b{font-size:13px;display:block;line-height:1.45}
+  #ed-ytprev .fi span{font-size:11px;color:var(--muted)}
+  #ed-ytprev button{padding:8px 12px;border-radius:10px;background:rgba(0,0,0,.08);font-size:12px;font-weight:800;flex:none}
+  .badge.yt{background:rgba(198,75,60,.12);color:var(--red)}
+
+  /* ===== Stage (performance mode) ===== */
+  #stage{position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;color:#F0F0F2;
+    background:radial-gradient(120% 90% at 50% -10%, #2A2140 0%, #17141F 45%, #0D0C12 100%)}
+  #stage::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.5;
+    background:radial-gradient(60% 40% at 20% 110%, rgba(106,168,79,.18), transparent 70%),
+               radial-gradient(60% 40% at 80% 110%, rgba(217,116,79,.14), transparent 70%)}
+  .st-top{display:flex;align-items:center;gap:10px;padding:calc(10px + env(safe-area-inset-top)) 14px 8px;position:relative;z-index:2}
+  .st-top .tbtn{width:40px;height:40px;flex:none;border-radius:50%;background:rgba(255,255,255,.08);
+    font-size:17px;display:flex;align-items:center;justify-content:center;color:#F0F0F2}
+  .st-top .tbtn:active{transform:scale(.92)}
+  .st-top .tbtn.on{background:rgba(106,168,79,.32)}
+  .st-title{flex:1;min-width:0;text-align:center}
+  .st-title b{font-size:15px;font-weight:800;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .st-title span{font-size:11.5px;color:rgba(240,240,242,.55);display:block}
+  #st-rec.rec{background:rgba(198,75,60,.4);animation:recpulse 1.2s infinite}
+  @keyframes recpulse{0%,100%{box-shadow:0 0 0 0 rgba(198,75,60,.5)}50%{box-shadow:0 0 0 9px rgba(198,75,60,0)}}
+
+  #st-lyr{flex:1;overflow-y:auto;position:relative;z-index:1;padding:12vh 22px 14vh;
+    -webkit-mask-image:linear-gradient(#0000 0,#000 9%,#000 91%,#0000 100%);
+    mask-image:linear-gradient(#0000 0,#000 9%,#000 91%,#0000 100%)}
+  .ly{font-size:21px;font-weight:700;line-height:1.55;text-align:center;color:rgba(240,240,242,.32);
+    margin:14px 0;transition:color .25s,transform .25s,text-shadow .25s;transform:scale(.97)}
+  .ly.past{color:rgba(240,240,242,.18)}
+  .ly.on{color:#fff;font-size:24px;font-weight:800;transform:scale(1.03);
+    text-shadow:0 0 22px rgba(255,255,255,.28)}
+  .ly.on .w{color:rgba(255,255,255,.38);transition:color .12s}
+  .ly.on .w.sung{color:#8FE06B;text-shadow:0 0 14px rgba(143,224,107,.5)}
+  .ly-count{font-size:26px;letter-spacing:12px;color:var(--green);text-align:center;margin:10px 0;min-height:34px}
+  .ly-plainnote{text-align:center;font-size:11.5px;color:rgba(240,240,242,.4);margin-bottom:14px}
+  .ly-end{font-size:38px;text-align:center;margin:20px 0}
+
+  #st-viz{display:block;width:100%;height:44px;position:relative;z-index:1;opacity:.85}
+
+  /* embedded YouTube player on stage */
+  #st-yt{position:relative;z-index:1;padding:6px 14px 0}
+  #st-yt .ytwrap{position:relative;max-width:min(100%,58vh);margin:0 auto;aspect-ratio:16/9;
+    border-radius:14px;overflow:hidden;background:#000;box-shadow:0 10px 34px rgba(0,0,0,.55)}
+  #st-yt .ytwrap iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+
+  .st-ctrl{position:relative;z-index:2;padding:6px 16px calc(14px + env(safe-area-inset-bottom));
+    background:rgba(13,12,18,.72);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
+    border-top:1px solid rgba(255,255,255,.06)}
+  .st-prog{display:flex;align-items:center;gap:10px;direction:ltr}
+  .st-prog span{font-size:11px;color:rgba(240,240,242,.6);min-width:36px;text-align:center}
+  .st-prog input{flex:1}
+  .st-trans{display:flex;align-items:center;justify-content:center;gap:22px;margin-top:6px}
+  .st-trans .sk{width:46px;height:46px;border-radius:50%;background:rgba(255,255,255,.08);font-size:13px;
+    font-weight:800;color:#F0F0F2;display:flex;align-items:center;justify-content:center}
+  #st-play{width:66px;height:66px;border-radius:50%;background:var(--green-d);color:#fff;font-size:26px;
+    display:flex;align-items:center;justify-content:center;box-shadow:0 6px 20px rgba(47,122,61,.45)}
+  #st-play:active,.st-trans .sk:active{transform:scale(.93)}
+
+  /* mixer drawer */
+  #st-mix{position:relative;z-index:2;background:rgba(13,12,18,.85);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
+    border-top:1px solid rgba(255,255,255,.08);padding:12px 18px 4px;max-height:46vh;overflow-y:auto}
+  .mx-row{display:flex;align-items:center;gap:12px;margin:11px 0}
+  .mx-row label{flex:none;width:96px;font-size:12.5px;font-weight:700;color:rgba(240,240,242,.85)}
+  .mx-row input[type=range]{flex:1;direction:ltr}
+  .mx-row .val{flex:none;width:46px;text-align:center;font-size:12px;font-weight:800;color:var(--green);
+    background:rgba(255,255,255,.07);border-radius:8px;padding:4px 0}
+  .mx-key{display:flex;align-items:center;gap:10px;flex:1;justify-content:center}
+  .mx-key button{width:40px;height:36px;border-radius:10px;background:rgba(255,255,255,.1);color:#fff;font-size:17px;font-weight:800}
+  .mx-key b{min-width:52px;text-align:center;font-size:15px}
+  .mx-sec{font-size:10.5px;font-weight:800;color:rgba(240,240,242,.45);letter-spacing:.08em;margin:14px 0 2px}
+  .mx-note{font-size:11px;color:rgba(240,240,242,.45);line-height:1.6;margin:4px 0 8px}
+  .mx-mic-toggle{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0}
+  .mx-mic-toggle button{padding:10px 18px;border-radius:999px;background:rgba(255,255,255,.1);color:#fff;font-size:13px;font-weight:800}
+  .mx-mic-toggle button.on{background:var(--green-d)}
+
+  input[type=range]{-webkit-appearance:none;appearance:none;height:26px;background:none}
+  input[type=range]::-webkit-slider-runnable-track{height:5px;border-radius:3px;background:rgba(127,127,127,.35)}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;
+    background:#fff;box-shadow:0 1px 5px rgba(0,0,0,.35);margin-top:-7.5px}
+  input[type=range]::-moz-range-track{height:5px;border-radius:3px;background:rgba(127,127,127,.35)}
+  input[type=range]::-moz-range-thumb{width:20px;height:20px;border-radius:50%;background:#fff;border:none}
+
+  /* ===== Tap-sync overlay ===== */
+  #syncov{position:fixed;inset:0;z-index:120;background:#141519;color:#F0F0F2;display:flex;flex-direction:column}
+  .sy-top{display:flex;align-items:center;justify-content:space-between;padding:calc(12px + env(safe-area-inset-top)) 16px 10px}
+  .sy-top b{font-size:15px}
+  .sy-top button{padding:9px 16px;border-radius:999px;background:rgba(255,255,255,.1);font-size:13px;font-weight:800;color:#fff}
+  .sy-top button.ok{background:var(--green-d)}
+  #sy-lines{flex:1;overflow-y:auto;padding:10px 20px 30vh}
+  .sy-ln{font-size:16px;line-height:1.5;padding:9px 12px;border-radius:10px;color:rgba(240,240,242,.45);margin:4px 0}
+  .sy-ln .tm{font-size:10.5px;color:var(--green);font-weight:800;display:inline-block;margin-inline-start:8px;direction:ltr}
+  .sy-ln.next{background:rgba(106,168,79,.14);color:#fff;font-weight:700}
+  .sy-ln.done{color:rgba(240,240,242,.75)}
+  .sy-ctrl{padding:10px 16px calc(16px + env(safe-area-inset-bottom));background:rgba(255,255,255,.04);border-top:1px solid rgba(255,255,255,.07)}
+  .sy-tr{display:flex;gap:10px;margin-bottom:10px}
+  .sy-tr button{flex:1;padding:12px;border-radius:12px;background:rgba(255,255,255,.1);color:#fff;font-size:14px;font-weight:800}
+  #sy-stamp{display:block;width:100%;padding:19px;border-radius:18px;background:var(--green-d);color:#fff;
+    font-size:17px;font-weight:800;box-shadow:0 6px 18px rgba(47,122,61,.4)}
+  #sy-stamp:active{transform:scale(.97)}
+
+  /* toast */
+  #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:200;background:var(--ink);color:#fff;
+    padding:11px 20px;border-radius:999px;font-size:13px;font-weight:700;box-shadow:0 6px 20px rgba(0,0,0,.3);
+    opacity:0;pointer-events:none;transition:opacity .25s;max-width:86vw;text-align:center}
+  #toast.show{opacity:1}
+  #busy{position:fixed;inset:0;z-index:150;background:rgba(20,21,25,.55);display:flex;align-items:center;justify-content:center}
+  #busy .bx{background:var(--card);color:var(--ink);border-radius:16px;padding:18px 26px;font-size:14px;font-weight:800;box-shadow:0 10px 30px rgba(0,0,0,.3)}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- ============ Library screen ============ -->
+  <div id="scr-lib" class="screen">
+    <div class="head">
+      <div>
+        <h1>🎤 קריוקי חי</h1>
+        <p class="sub">כל שיר הופך לפלייבק — עם מילים על המסך</p>
+      </div>
+      <a class="homebtn" href="index.html" aria-label="חזרה לדף הבית">🏠</a>
+    </div>
+
+    <div class="sec-t">השירים שלי</div>
+    <div id="lib-list"></div>
+
+    <button id="btn-add">➕ הוספת שיר</button>
+    <p class="note" style="text-align:center">הקבצים נשמרים מקומית במכשיר הזה בלבד</p>
+  </div>
+
+  <!-- ============ Edit / import screen ============ -->
+  <div id="scr-edit" class="screen hidden">
+    <div class="head">
+      <div><h1 id="ed-h">הוספת שיר</h1><p class="sub">קובץ שמע + מילים = קריוקי</p></div>
+      <button class="homebtn" id="ed-back" aria-label="חזרה">✕</button>
+    </div>
+
+    <div class="card">
+      <div class="sec-t" style="margin-top:0">🎵 מקור השיר</div>
+      <div class="filebox">
+        <div class="em">🎵</div>
+        <div class="fi"><b id="ed-fname">לא נבחר קובץ</b><span id="ed-fmeta"></span></div>
+        <button id="ed-pick">בחירה</button>
+      </div>
+      <p class="note">הפרדת השירה עובדת הכי טוב על קובצי סטריאו מקוריים (MP3 / M4A / WAV / FLAC).
+      אם יש לך גרסת פלייבק מוכנה — אפשר לטעון אותה ולכבות את הסרת השירה.</p>
+
+      <div class="or-div">או קליפ מ-YouTube</div>
+      <div class="ytbox">
+        <input id="ed-yturl" type="url" inputmode="url" placeholder="https://www.youtube.com/watch?v=…" />
+        <button id="ed-ytload">טעינה</button>
+      </div>
+      <div id="ed-ytprev" class="hidden"></div>
+      <p class="note">הקליפ מתנגן דרך נגן YouTube הרשמי בתוך האפליקציה, עם המילים מסונכרנות מעליו.
+      הסרת שירה ושינוי טון לא זמינים על YouTube — טיפ: מחפשים ביוטיוב גרסת "קריוקי" או "פלייבק" של השיר, קיימת כמעט לכל שיר.</p>
+
+      <label class="field"><span>שם השיר</span><input id="ed-title" type="text" /></label>
+      <label class="field"><span>אמן/ית</span><input id="ed-artist" type="text" /></label>
+    </div>
+
+    <div class="card">
+      <div class="sec-t" style="margin-top:0">📝 מילים</div>
+      <div class="rowbtns">
+        <button id="ed-fetch">🔎 חיפוש מילים מסונכרנות</button>
+        <button id="ed-lrcfile">📂 קובץ LRC</button>
+        <button id="ed-sync">⏱ סנכרון ידני</button>
+      </div>
+      <div id="ed-results"></div>
+      <label class="field"><span>מילות השיר (LRC מסונכרן או טקסט חופשי)</span>
+        <textarea id="ed-lyr" placeholder="[00:12.30] שורה ראשונה של השיר…&#10;או פשוט להדביק מילים רגילות"></textarea>
+      </label>
+      <p class="note" id="ed-lyrstate"></p>
+    </div>
+
+    <button class="btn-primary" id="ed-save">שמירה בספרייה</button>
+    <button class="btn-danger hidden" id="ed-del">מחיקת השיר מהספרייה</button>
+    <input type="file" id="ed-file" accept="audio/*" class="hidden" />
+    <input type="file" id="ed-lrcinput" accept=".lrc,.txt" class="hidden" />
+  </div>
+</div>
+
+<!-- ============ Stage (performance) ============ -->
+<div id="stage" class="hidden">
+  <div class="st-top">
+    <button class="tbtn" id="st-close" aria-label="סגירה">✕</button>
+    <button class="tbtn" id="st-rec" aria-label="הקלטת ביצוע">⏺</button>
+    <div class="st-title"><b id="st-t1"></b><span id="st-t2"></span></div>
+    <button class="tbtn" id="st-mic" aria-label="מיקרופון">🎙️</button>
+    <button class="tbtn" id="st-mixbtn" aria-label="מיקסר">🎚️</button>
+  </div>
+
+  <div id="st-yt" class="hidden"><div class="ytwrap"><div id="st-ytp"></div></div></div>
+  <div id="st-lyr"></div>
+  <canvas id="st-viz"></canvas>
+
+  <div id="st-mix" class="hidden">
+    <div class="mx-sec">מוזיקה</div>
+    <div class="mx-row">
+      <label>🚫 הסרת שירה</label>
+      <input type="range" id="mx-rem" min="0" max="100" value="100" />
+      <div class="val" id="mx-rem-v">100%</div>
+    </div>
+    <p class="mx-note hidden" id="mx-mononote">⚠️ הקובץ הזה הוא מונו — אי אפשר להפריד ממנו שירה. כדאי קובץ סטריאו או גרסת פלייבק.</p>
+    <div class="mx-row">
+      <label>🎹 טון (Key)</label>
+      <div class="mx-key">
+        <button id="mx-keydn">−</button><b id="mx-key-v" class="num">0</b><button id="mx-keyup">+</button>
+      </div>
+    </div>
+    <div class="mx-row">
+      <label>🏃 מהירות</label>
+      <input type="range" id="mx-tempo" min="75" max="125" value="100" />
+      <div class="val" id="mx-tempo-v">100%</div>
+    </div>
+    <div class="mx-row">
+      <label>🔊 עוצמה</label>
+      <input type="range" id="mx-vol" min="0" max="120" value="95" />
+      <div class="val" id="mx-vol-v">95%</div>
+    </div>
+
+    <div class="mx-sec">מיקרופון</div>
+    <div class="mx-mic-toggle">
+      <span class="mx-note" style="margin:0">שירה חיה דרך הרמקולים — חובה אוזניות או רמקול מרוחק (אחרת יהיה פידבק)</span>
+      <button id="mx-micbtn">כבוי</button>
+    </div>
+    <div id="mx-microws" class="hidden">
+      <div class="mx-row">
+        <label>🎙️ עוצמת מיקרופון</label>
+        <input type="range" id="mx-micvol" min="0" max="150" value="100" />
+        <div class="val" id="mx-micvol-v">100%</div>
+      </div>
+      <div class="mx-row">
+        <label>🔁 אקו</label>
+        <input type="range" id="mx-echo" min="0" max="100" value="25" />
+        <div class="val" id="mx-echo-v">25%</div>
+      </div>
+      <div class="mx-row">
+        <label>🏛️ ריוורב</label>
+        <input type="range" id="mx-rev" min="0" max="100" value="30" />
+        <div class="val" id="mx-rev-v">30%</div>
+      </div>
+    </div>
+    <div style="height:8px"></div>
+  </div>
+
+  <div class="st-ctrl">
+    <div class="st-prog">
+      <span class="num" id="st-cur">0:00</span>
+      <input type="range" id="st-seek" min="0" max="1000" value="0" />
+      <span class="num" id="st-dur">0:00</span>
+    </div>
+    <div class="st-trans">
+      <button class="sk" id="st-back10">10−</button>
+      <button id="st-play">▶</button>
+      <button class="sk" id="st-fwd10">10+</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Tap-sync overlay ============ -->
+<div id="syncov" class="hidden">
+  <div class="sy-top">
+    <button id="sy-cancel">ביטול</button>
+    <b>⏱ סנכרון מילים</b>
+    <button class="ok" id="sy-done">סיום ושמירה</button>
+  </div>
+  <div id="sy-lines"></div>
+  <div class="sy-ctrl">
+    <div class="sy-tr">
+      <button id="sy-back">⏪ 3 שניות</button>
+      <button id="sy-play">▶ ניגון</button>
+      <button id="sy-undo">↩ ביטול שורה</button>
+    </div>
+    <button id="sy-stamp">🎯 השורה המסומנת מתחילה עכשיו</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+<div id="busy" class="hidden"><div class="bx" id="busy-t">טוען…</div></div>
+
+<script>
+"use strict";
+/* ================================================================
+   קריוקי חי — turns any song into a live karaoke playback:
+   * vocal removal (mid/side center-cancel, bass+air preserved)
+   * key (pitch) shift + tempo without pitch change (AudioWorklet)
+   * synced lyrics: LRCLIB search, LRC files, manual tap-sync
+   * live microphone with echo/reverb + performance recording
+   * local song library in IndexedDB
+   ================================================================ */
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g,
+  c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+function fmt(t) {
+  t = Math.max(0, Math.round(t || 0));
+  return Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0");
+}
+let _toastTimer = null;
+function toast(msg, ms) {
+  const el = $("toast");
+  el.textContent = msg; el.classList.add("show");
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove("show"), ms || 2600);
+}
+function busy(msg) {
+  if (msg === false) { $("busy").classList.add("hidden"); return; }
+  $("busy-t").textContent = msg; $("busy").classList.remove("hidden");
+}
+
+/* ================= IndexedDB song library ================= */
+const DB_NAME = "karaoke-db", STORE = "songs";
+let _db = null;
+function db() {
+  return new Promise((res, rej) => {
+    if (_db) return res(_db);
+    const rq = indexedDB.open(DB_NAME, 1);
+    rq.onupgradeneeded = () => rq.result.createObjectStore(STORE, { keyPath: "id" });
+    rq.onsuccess = () => { _db = rq.result; res(_db); };
+    rq.onerror = () => rej(rq.error);
+  });
+}
+async function dbAll() {
+  const d = await db();
+  return new Promise((res, rej) => {
+    const rq = d.transaction(STORE).objectStore(STORE).getAll();
+    rq.onsuccess = () => res(rq.result || []); rq.onerror = () => rej(rq.error);
+  });
+}
+async function dbPut(song) {
+  const d = await db();
+  return new Promise((res, rej) => {
+    const tx = d.transaction(STORE, "readwrite");
+    tx.objectStore(STORE).put(song);
+    tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+  });
+}
+async function dbDel(id) {
+  const d = await db();
+  return new Promise((res, rej) => {
+    const tx = d.transaction(STORE, "readwrite");
+    tx.objectStore(STORE).delete(id);
+    tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+  });
+}
+
+/* ================= LRC parsing ================= */
+function lrcTime(m, s, f) {
+  let frac = 0;
+  if (f) frac = parseInt(f, 10) / Math.pow(10, f.length);
+  return parseInt(m, 10) * 60 + parseInt(s, 10) + frac;
+}
+/* returns [{t, text, words:[{t,text}]|null}] sorted by t, or null if no timestamps */
+function parseLrc(text) {
+  if (!text) return null;
+  const out = []; let offset = 0;
+  const TAG = /\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\]/g;
+  for (const raw of text.split(/\r?\n/)) {
+    const off = raw.match(/^\s*\[offset:\s*([+-]?\d+)\s*\]/i);
+    if (off) { offset = parseInt(off[1], 10) / 1000; continue; }
+    const times = [...raw.matchAll(TAG)];
+    if (!times.length) continue;
+    let body = raw.replace(TAG, "").trim();
+    let words = null;
+    if (/<\d{1,2}:\d{2}/.test(body)) {           /* enhanced (word-level) LRC */
+      words = [];
+      for (const w of body.matchAll(/<(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?>([^<]*)/g)) {
+        const wt = lrcTime(w[1], w[2], w[3]) - offset;
+        if (w[4].trim()) words.push({ t: wt, text: w[4] });
+      }
+      body = body.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+      if (!words.length) words = null;
+    }
+    if (!body) continue;
+    for (const tm of times) out.push({ t: lrcTime(tm[1], tm[2], tm[3]) - offset, text: body, words });
+  }
+  out.sort((a, b) => a.t - b.t);
+  return out.length ? out : null;
+}
+function lrcStamp(t) {
+  const m = Math.floor(t / 60), s = t - m * 60;
+  return "[" + String(m).padStart(2, "0") + ":" + (s < 10 ? "0" : "") + s.toFixed(2) + "]";
+}
+
+/* ================= LRCLIB — free synced-lyrics database ================= */
+async function lrclibSearch(title, artist) {
+  const u = new URL("https://lrclib.net/api/search");
+  u.searchParams.set("q", (title + " " + artist).trim());
+  const r = await fetch(u);
+  if (!r.ok) throw new Error("lrclib " + r.status);
+  return await r.json();
+}
+
+/* ================= YouTube embedded player =================
+   The clip plays through the official IFrame player (views/ads reach the
+   creator); we sync lyrics to its clock. The stream's audio is not
+   accessible, so vocal removal / key shift apply to local files only. */
+function ytIdFromUrl(u) {
+  u = String(u || "").trim();
+  const m = u.match(/(?:youtube\.com\/(?:watch\?[^#\s]*v=|shorts\/|embed\/|live\/)|youtu\.be\/)([\w-]{11})/);
+  if (m) return m[1];
+  return /^[\w-]{11}$/.test(u) ? u : null;
+}
+async function ytMeta(id) {
+  const watch = "https://www.youtube.com/watch?v=" + id;
+  for (const ep of ["https://www.youtube.com/oembed?format=json&url=",
+                    "https://noembed.com/embed?url="]) {
+    try {
+      const r = await fetch(ep + encodeURIComponent(watch));
+      if (r.ok) { const j = await r.json(); if (j && j.title) return j; }
+    } catch (e) {}
+  }
+  return null;
+}
+let _ytApiP = null;
+function ytApi() {
+  if (window.YT && window.YT.Player) return Promise.resolve();
+  if (_ytApiP) return _ytApiP;
+  _ytApiP = new Promise((res, rej) => {
+    const prev = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => { if (prev) { try { prev(); } catch (e) {} } res(); };
+    const s = document.createElement("script");
+    s.src = "https://www.youtube.com/iframe_api";
+    s.onerror = () => rej(new Error("iframe_api load failed"));
+    document.head.appendChild(s);
+    setTimeout(() => rej(new Error("iframe_api timeout")), 15000);
+  });
+  _ytApiP.catch(() => { _ytApiP = null; });
+  return _ytApiP;
+}
+const YTP = {
+  p: null, ready: false, playing: false, dur: 0,
+  async open(videoId) {
+    await ytApi();
+    this.destroy();
+    return new Promise((res, rej) => {
+      const to = setTimeout(() => rej(new Error("player timeout")), 20000);
+      this.p = new YT.Player("st-ytp", {
+        videoId,
+        host: "https://www.youtube-nocookie.com",
+        playerVars: { playsinline: 1, rel: 0, controls: 0, disablekb: 1 },
+        events: {
+          onReady: e => { clearTimeout(to); this.ready = true; this.dur = e.target.getDuration() || 0; res(); },
+          onError: () => { clearTimeout(to); rej(new Error("embed blocked")); },
+          onStateChange: e => {
+            this.playing = e.data === YT.PlayerState.PLAYING;
+            if (this.ready && this.p) { try { this.dur = this.p.getDuration() || this.dur; } catch (err) {} }
+            updatePlayBtn();
+          },
+          onPlaybackRateChange: e => {
+            /* YouTube snaps to its supported rates — reflect the real one */
+            const v = Math.round(e.data * 100);
+            $("mx-tempo").value = v; $("mx-tempo-v").textContent = v + "%";
+          }
+        }
+      });
+    });
+  },
+  destroy() {
+    if (this.p) { try { this.p.destroy(); } catch (e) {} }
+    this.p = null; this.ready = false; this.playing = false; this.dur = 0;
+    const wrap = document.querySelector("#st-yt .ytwrap");
+    if (wrap) wrap.innerHTML = '<div id="st-ytp"></div>';
+  },
+  cur() { try { return this.ready && this.p ? (this.p.getCurrentTime() || 0) : 0; } catch (e) { return 0; } },
+  play() { try { if (this.p) this.p.playVideo(); } catch (e) {} },
+  pause() { try { if (this.p) this.p.pauseVideo(); } catch (e) {} },
+  seek(t) { try { if (this.p) this.p.seekTo(Math.max(0, t), true); } catch (e) {} },
+  setRate(r) { try { if (this.p) this.p.setPlaybackRate(r); } catch (e) {} },
+  setVol(v) { try { if (this.p) this.p.setVolume(Math.round(Math.min(100, v * 100))); } catch (e) {} }
+};
+
+/* unified transport over the file engine / YouTube player */
+const P = {
+  mode: "file",
+  playing() { return this.mode === "yt" ? YTP.playing : E.playing; },
+  dur() { return this.mode === "yt" ? YTP.dur : E.dur; },
+  cur() { return this.mode === "yt" ? YTP.cur() : E.cur(); },
+  async play() { if (this.mode === "yt") YTP.play(); else await E.play(); },
+  pause() { if (this.mode === "yt") YTP.pause(); else E.pause(); },
+  seek(t) { if (this.mode === "yt") YTP.seek(t); else E.seek(t); }
+};
+
+/* ================= Audio engine =================
+   source → [mid/side vocal removal] → pitch-shift worklet → master
+   Mid/side: vocals sit in the centre (mid); we cut the mid's vocal band
+   (≈180Hz–7.2kHz) while keeping bass + air, and keep the sides intact.
+   Tempo uses playbackRate; the worklet compensates pitch so key holds. */
+const WORKLET_SRC = "class KShift extends AudioWorkletProcessor{" +
+  "static get parameterDescriptors(){return[{name:'pitch',defaultValue:0,minValue:-24,maxValue:24}]}" +
+  "constructor(){super();this.N=32768;this.W=Math.round(sampleRate*0.09);" +
+  "this.b=[new Float32Array(this.N),new Float32Array(this.N)];this.w=0;this.p=0;}" +
+  "process(inputs,outputs,params){" +
+  "const inp=inputs[0],out=outputs[0];if(!out||!out[0])return true;" +
+  "const n=out[0].length,semis=params.pitch[0],ratio=Math.pow(2,semis/12);" +
+  "const N=this.N,W=this.W,flat=Math.abs(semis)<0.005;" +
+  "for(let i=0;i<n;i++){const wI=this.w;" +
+  "for(let c=0;c<2;c++){const src=inp&&inp.length?inp[Math.min(c,inp.length-1)]:null;" +
+  "this.b[c][wI]=src?src[i]:0;}" +
+  "if(flat){for(let c=0;c<out.length;c++)out[c][i]=this.b[Math.min(c,1)][wI];}" +
+  "else{this.p-=(ratio-1);this.p%=W;if(this.p<0)this.p+=W;" +
+  "const d1=this.p,d2=(this.p+W/2)%W;" +
+  "const g1=Math.sin(Math.PI*d1/W),g2=Math.sin(Math.PI*d2/W);" +
+  "for(let c=0;c<out.length;c++){const b=this.b[Math.min(c,1)];let v=0;" +
+  "let rp=wI-d1-2;let i0=Math.floor(rp),fr=rp-i0;i0=((i0%N)+N)%N;" +
+  "v+=g1*(b[i0]*(1-fr)+b[(i0+1)%N]*fr);" +
+  "rp=wI-d2-2;i0=Math.floor(rp);fr=rp-i0;i0=((i0%N)+N)%N;" +
+  "v+=g2*(b[i0]*(1-fr)+b[(i0+1)%N]*fr);" +
+  "out[c][i]=v;}}" +
+  "this.w=(wI+1)%N;}" +
+  "return true;}}" +
+  "registerProcessor('k-shift',KShift);";
+
+function makeImpulse(ctx, seconds, decay) {
+  const len = Math.floor(ctx.sampleRate * seconds);
+  const buf = ctx.createBuffer(2, len, ctx.sampleRate);
+  for (let c = 0; c < 2; c++) {
+    const d = buf.getChannelData(c);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+  }
+  return buf;
+}
+
+const E = {
+  ctx: null, workletOk: false, nodes: {},
+  buf: null, dur: 0, mono: false,
+  src: null, playing: false, pos: 0, t0: 0, p0: 0,
+  rate: 1, key: 0, removal: 1,
+  micStream: null, micOn: false,
+  rec: null, recChunks: [],
+  onend: null,
+
+  async ensure() {
+    if (this.ctx) return;
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    this.ctx = ctx;
+    try {
+      const url = URL.createObjectURL(new Blob([WORKLET_SRC], { type: "application/javascript" }));
+      await ctx.audioWorklet.addModule(url);
+      URL.revokeObjectURL(url);
+      this.workletOk = true;
+    } catch (e) { this.workletOk = false; }
+    const n = this.nodes;
+    n.in = ctx.createGain();
+    /* force stereo so a mono file becomes identical L/R (side = 0 exactly) */
+    n.in.channelCount = 2; n.in.channelCountMode = "explicit"; n.in.channelInterpretation = "speakers";
+    n.split = ctx.createChannelSplitter(2);
+    n.in.connect(n.split);
+    n.mid = ctx.createGain(); n.side = ctx.createGain();
+    const gL = ctx.createGain(), gR = ctx.createGain(), gLs = ctx.createGain(), gRs = ctx.createGain();
+    gL.gain.value = .5; gR.gain.value = .5; gLs.gain.value = .5; gRs.gain.value = -.5;
+    n.split.connect(gL, 0); n.split.connect(gR, 1); gL.connect(n.mid); gR.connect(n.mid);
+    n.split.connect(gLs, 0); n.split.connect(gRs, 1); gLs.connect(n.side); gRs.connect(n.side);
+    /* mid: dry path (vocals kept) + karaoke path (bass + air only) */
+    n.dryMid = ctx.createGain(); n.dryMid.gain.value = 0;
+    n.mid.connect(n.dryMid);
+    n.wetMid = ctx.createGain(); n.wetMid.gain.value = 1;
+    /* 3 cascaded biquads per edge ≈ 36dB/oct — a steep cut of the vocal band */
+    let lpTail = n.mid, hpTail = n.mid;
+    for (let i = 0; i < 3; i++) {
+      const lp = ctx.createBiquadFilter();
+      lp.type = "lowpass"; lp.frequency.value = 180; lp.Q.value = 0.6;
+      lpTail.connect(lp); lpTail = lp;
+      const hp = ctx.createBiquadFilter();
+      hp.type = "highpass"; hp.frequency.value = 7200; hp.Q.value = 0.6;
+      hpTail.connect(hp); hpTail = hp;
+    }
+    lpTail.connect(n.wetMid); hpTail.connect(n.wetMid);
+    n.midOut = ctx.createGain();
+    n.dryMid.connect(n.midOut); n.wetMid.connect(n.midOut);
+    n.sideInv = ctx.createGain(); n.sideInv.gain.value = -1; n.side.connect(n.sideInv);
+    n.merge = ctx.createChannelMerger(2);
+    n.midOut.connect(n.merge, 0, 0); n.side.connect(n.merge, 0, 0);
+    n.midOut.connect(n.merge, 0, 1); n.sideInv.connect(n.merge, 0, 1);
+    let tail = n.merge;
+    if (this.workletOk) {
+      n.pitch = new AudioWorkletNode(ctx, "k-shift", { outputChannelCount: [2] });
+      tail.connect(n.pitch); tail = n.pitch;
+    }
+    n.master = ctx.createGain(); n.master.gain.value = .95;
+    n.comp = ctx.createDynamicsCompressor();
+    n.comp.threshold.value = -12; n.comp.ratio.value = 4;
+    n.an = ctx.createAnalyser(); n.an.fftSize = 256; n.an.smoothingTimeConstant = .8;
+    tail.connect(n.master); n.master.connect(n.comp); n.comp.connect(n.an);
+    n.an.connect(ctx.destination);
+    n.recDest = ctx.createMediaStreamDestination();
+    n.an.connect(n.recDest);
+  },
+
+  async load(blob) {
+    await this.ensure();
+    this.stopSrc();
+    const ab = await blob.arrayBuffer();
+    this.buf = await this.ctx.decodeAudioData(ab);
+    this.dur = this.buf.duration;
+    this.mono = this.buf.numberOfChannels < 2;
+    this.pos = 0;
+    return this.buf;
+  },
+
+  stopSrc() {
+    if (this.src) { const s = this.src; this.src = null; s.onended = null; try { s.stop(); } catch (e) {} }
+    this.playing = false;
+  },
+
+  cur() {
+    if (!this.playing) return this.pos;
+    return Math.min(this.p0 + (this.ctx.currentTime - this.t0) * this.rate, this.dur);
+  },
+
+  async play() {
+    if (this.playing || !this.buf) return;
+    if (this.ctx.state === "suspended") { try { await this.ctx.resume(); } catch (e) {} }
+    if (this.pos >= this.dur - 0.05) this.pos = 0;
+    const s = this.ctx.createBufferSource();
+    s.buffer = this.buf; s.playbackRate.value = this.rate;
+    s.connect(this.nodes.in);
+    s.start(0, this.pos);
+    this.src = s; this.t0 = this.ctx.currentTime; this.p0 = this.pos; this.playing = true;
+    s.onended = () => {
+      if (this.src !== s) return;
+      this.src = null; this.playing = false; this.pos = this.dur;
+      if (this.onend) this.onend();
+    };
+  },
+
+  pause() {
+    if (!this.playing) return;
+    this.pos = this.cur();
+    this.stopSrc();
+  },
+
+  seek(t) {
+    t = Math.max(0, Math.min(t, this.dur));
+    const was = this.playing;
+    if (was) this.stopSrc();
+    this.pos = t;
+    if (was) this.play();
+  },
+
+  setRemoval(x) {
+    this.removal = x;
+    const t = this.ctx.currentTime;
+    this.nodes.dryMid.gain.setTargetAtTime(1 - x, t, .05);
+    this.nodes.wetMid.gain.setTargetAtTime(x, t, .05);
+  },
+  setVolume(v) { this.nodes.master.gain.setTargetAtTime(v, this.ctx.currentTime, .05); },
+  setKey(k) { this.key = k; this.applyPitch(); },
+  setRate(r) {
+    if (this.playing) { this.p0 = this.cur(); this.t0 = this.ctx.currentTime; }
+    this.rate = r;
+    if (this.src) this.src.playbackRate.value = r;
+    this.applyPitch();
+  },
+  applyPitch() {
+    if (!this.workletOk) return;
+    /* user key shift + compensation so tempo changes don't change the key */
+    const total = this.key - 12 * Math.log2(this.rate);
+    this.nodes.pitch.parameters.get("pitch").value = total;
+  },
+
+  /* ---- live microphone with echo + reverb ---- */
+  async micStart() {
+    if (this.micOn) return;
+    await this.ensure();      /* mic works in YouTube mode too, before any file loads */
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    });
+    this.micStream = stream;
+    const c = this.ctx, n = this.nodes;
+    if (!n.micBus) {
+      n.micBus = c.createGain();
+      n.micHp = c.createBiquadFilter(); n.micHp.type = "highpass"; n.micHp.frequency.value = 90;
+      n.micGain = c.createGain();
+      n.micHp.connect(n.micGain);
+      n.micGain.connect(n.micBus);
+      n.echoSend = c.createGain(); n.echoSend.gain.value = .25;
+      n.dly = c.createDelay(1); n.dly.delayTime.value = .27;
+      n.fb = c.createGain(); n.fb.gain.value = .32;
+      n.micGain.connect(n.echoSend); n.echoSend.connect(n.dly);
+      n.dly.connect(n.fb); n.fb.connect(n.dly);
+      n.dly.connect(n.micBus);
+      n.revSend = c.createGain(); n.revSend.gain.value = .3;
+      n.conv = c.createConvolver(); n.conv.buffer = makeImpulse(c, 1.7, 2.6);
+      n.micGain.connect(n.revSend); n.revSend.connect(n.conv); n.conv.connect(n.micBus);
+      n.micBus.connect(c.destination);
+      n.micBus.connect(n.recDest);
+    }
+    n.micSrc = c.createMediaStreamSource(stream);
+    n.micSrc.connect(n.micHp);
+    if (c.state === "suspended") { try { await c.resume(); } catch (e) {} }
+    this.micOn = true;
+  },
+  micStop() {
+    if (!this.micOn) return;
+    try { this.nodes.micSrc.disconnect(); } catch (e) {}
+    if (this.micStream) this.micStream.getTracks().forEach(t => t.stop());
+    this.micStream = null; this.micOn = false;
+  },
+  setMicVol(v) { if (this.nodes.micGain) this.nodes.micGain.gain.setTargetAtTime(v, this.ctx.currentTime, .05); },
+  setEcho(v) { if (this.nodes.echoSend) this.nodes.echoSend.gain.setTargetAtTime(v, this.ctx.currentTime, .05); },
+  setReverb(v) { if (this.nodes.revSend) this.nodes.revSend.gain.setTargetAtTime(v * 1.2, this.ctx.currentTime, .05); },
+
+  /* ---- performance recording (music mix + mic) ---- */
+  recStart() {
+    if (this.rec) return false;
+    let mime = "";
+    for (const m of ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"])
+      if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) { mime = m; break; }
+    if (!window.MediaRecorder) return false;
+    try {
+      this.rec = new MediaRecorder(this.nodes.recDest.stream, mime ? { mimeType: mime } : undefined);
+    } catch (e) { this.rec = null; return false; }
+    this.recChunks = [];
+    this.rec.ondataavailable = e => { if (e.data && e.data.size) this.recChunks.push(e.data); };
+    this.rec.start(1000);
+    return true;
+  },
+  recStop(fileBase) {
+    if (!this.rec) return;
+    const rec = this.rec; this.rec = null;
+    rec.onstop = () => {
+      const type = rec.mimeType || "audio/webm";
+      const blob = new Blob(this.recChunks, { type });
+      this.recChunks = [];
+      if (!blob.size) { toast("ההקלטה יצאה ריקה"); return; }
+      const ext = type.includes("mp4") ? "m4a" : "webm";
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = (fileBase || "karaoke") + "." + ext;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+      toast("🎧 ההקלטה ירדה למכשיר");
+    };
+    try { rec.stop(); } catch (e) {}
+  }
+};
+
+/* ================= Screens & navigation ================= */
+let songs = [];
+function showScreen(id) {
+  $("scr-lib").classList.toggle("hidden", id !== "lib");
+  $("scr-edit").classList.toggle("hidden", id !== "edit");
+}
+
+/* ---------------- Library ---------------- */
+async function renderLib() {
+  try { songs = await dbAll(); } catch (e) { songs = []; }
+  songs.sort((a, b) => (b.lastPlayed || b.createdAt || 0) - (a.lastPlayed || a.createdAt || 0));
+  const box = $("lib-list");
+  if (!songs.length) {
+    box.innerHTML = '<div class="card empty"><span class="big">🎶</span>' +
+      'עדיין אין שירים בספרייה.<br>מוסיפים קובץ שיר או קישור YouTube — והמערכת הופכת אותו לקריוקי:' +
+      '<br>מילים מסונכרנות על המסך, הסרת שירה (בקבצים), שינוי טון ומיקרופון חי.</div>';
+    return;
+  }
+  box.innerHTML = songs.map(s => {
+    const synced = !!parseLrc(s.lyrics);
+    const badge = (s.ytId ? '<span class="badge yt">▶ YouTube</span>' : "") +
+      (synced ? '<span class="badge sync">🎯 מסונכרן</span>'
+              : (s.lyrics ? '<span class="badge plain">📄 מילים</span>' : ""));
+    const len = s.duration ? fmt(s.duration) : (s.ytId ? "קליפ" : "0:00");
+    return '<div class="song" data-id="' + esc(s.id) + '">' +
+      '<button class="play" data-act="play">▶</button>' +
+      '<div class="info" data-act="play"><b>' + esc(s.title) + badge + "</b>" +
+      '<span>' + esc(s.artist || "לא ידוע") + " · " + len + "</span></div>" +
+      '<button class="edit" data-act="edit">✏️</button></div>';
+  }).join("");
+}
+$("lib-list").addEventListener("click", e => {
+  const act = e.target.closest("[data-act]");
+  const item = e.target.closest(".song");
+  if (!act || !item) return;
+  const song = songs.find(s => s.id === item.dataset.id);
+  if (!song) return;
+  if (act.dataset.act === "edit") openEdit(song);
+  else openStage(song);
+});
+
+/* ---------------- Edit / import ---------------- */
+let draft = null;
+function openEdit(song) {
+  draft = song ? Object.assign({}, song) : {
+    id: "s" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+    title: "", artist: "", lyrics: "", blob: null, fileName: "", duration: 0,
+    settings: null, createdAt: Date.now()
+  };
+  $("ed-h").textContent = song ? "עריכת שיר" : "הוספת שיר";
+  $("ed-title").value = draft.title || "";
+  $("ed-artist").value = draft.artist || "";
+  $("ed-lyr").value = draft.lyrics || "";
+  $("ed-fname").textContent = draft.fileName || "לא נבחר קובץ";
+  $("ed-fmeta").textContent = draft.duration && draft.blob ? "משך: " + fmt(draft.duration) : "";
+  $("ed-yturl").value = "";
+  renderYtPrev();
+  $("ed-results").innerHTML = "";
+  $("ed-del").classList.toggle("hidden", !song);
+  updateLyrState();
+  showScreen("edit");
+}
+function renderYtPrev(metaTitle) {
+  const box = $("ed-ytprev");
+  if (!draft || !draft.ytId) { box.innerHTML = ""; box.classList.add("hidden"); return; }
+  box.classList.remove("hidden");
+  box.innerHTML = '<img src="https://i.ytimg.com/vi/' + esc(draft.ytId) + '/mqdefault.jpg" alt="" />' +
+    '<div class="fi"><b>' + esc(metaTitle || "סרטון YouTube") + '</b><span dir="ltr">' + esc(draft.ytId) + "</span></div>" +
+    '<button type="button" id="ed-ytclear">הסרה</button>';
+  $("ed-ytclear").addEventListener("click", () => { draft.ytId = null; renderYtPrev(); });
+}
+function updateLyrState() {
+  const txt = $("ed-lyr").value.trim();
+  const st = $("ed-lyrstate");
+  if (!txt) { st.textContent = "בלי מילים השיר יתנגן כפלייבק בלבד."; return; }
+  const parsed = parseLrc(txt);
+  st.textContent = parsed
+    ? "✅ זוהו מילים מסונכרנות (" + parsed.length + " שורות) — יוצגו על המסך בזמן אמת."
+    : "📄 מילים ללא סנכרון — יוצגו כטקסט. אפשר לסנכרן ידנית עם ⏱.";
+}
+$("ed-lyr").addEventListener("input", updateLyrState);
+$("ed-back").addEventListener("click", () => { draft = null; showScreen("lib"); });
+$("ed-pick").addEventListener("click", () => $("ed-file").click());
+$("ed-file").addEventListener("change", async e => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (!f) return;
+  draft.blob = f; draft.fileName = f.name;
+  draft.ytId = null; renderYtPrev();
+  $("ed-fname").textContent = f.name;
+  /* duration via a throwaway <audio> — no full decode needed at import time */
+  const url = URL.createObjectURL(f);
+  const a = new Audio();
+  a.preload = "metadata"; a.src = url;
+  a.onloadedmetadata = () => {
+    draft.duration = a.duration && isFinite(a.duration) ? a.duration : 0;
+    $("ed-fmeta").textContent = draft.duration ? "משך: " + fmt(draft.duration) : "";
+    URL.revokeObjectURL(url);
+  };
+  a.onerror = () => URL.revokeObjectURL(url);
+  /* guess "Artist - Title" from the file name */
+  if (!$("ed-title").value) {
+    const base = f.name.replace(/\.[^.]+$/, "").replace(/[_]+/g, " ").trim();
+    const m = base.match(/^(.+?)\s*-\s*(.+)$/);
+    if (m) { $("ed-artist").value = m[1].trim(); $("ed-title").value = m[2].trim(); }
+    else $("ed-title").value = base;
+  }
+});
+$("ed-ytload").addEventListener("click", async () => {
+  const id = ytIdFromUrl($("ed-yturl").value);
+  if (!id) { toast("זה לא נראה כמו קישור YouTube תקין"); return; }
+  draft.ytId = id;
+  draft.blob = null; draft.fileName = ""; draft.duration = 0;
+  $("ed-fname").textContent = "לא נבחר קובץ"; $("ed-fmeta").textContent = "";
+  renderYtPrev();
+  const meta = await ytMeta(id);
+  if (meta && draft && draft.ytId === id) {
+    renderYtPrev(meta.title);
+    /* strip "(Official Video)"-style suffixes, then try "Artist - Title" */
+    const clean = String(meta.title)
+      .replace(/[(\[][^)\]]*(official|video|audio|lyric|hd|4k|קליפ|רשמי|מילים)[^)\]]*[)\]]/gi, "").trim();
+    if (!$("ed-title").value) {
+      const m = clean.match(/^(.+?)\s*[-–|]\s*(.+)$/);
+      if (m) { $("ed-artist").value = m[1].trim(); $("ed-title").value = m[2].trim(); }
+      else $("ed-title").value = clean || meta.title;
+    }
+    if (!$("ed-artist").value && meta.author_name)
+      $("ed-artist").value = String(meta.author_name).replace(/\s*-\s*Topic$/i, "");
+    toast("פרטי הסרטון נטענו — עכשיו 🔎 לחיפוש מילים מסונכרנות");
+  } else if (draft && draft.ytId === id) {
+    toast("הסרטון נטען — ממלאים שם ואמן ידנית ואז 🔎");
+  }
+});
+$("ed-lrcfile").addEventListener("click", () => $("ed-lrcinput").click());
+$("ed-lrcinput").addEventListener("change", async e => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (!f) return;
+  $("ed-lyr").value = await f.text();
+  updateLyrState();
+  toast("קובץ המילים נטען");
+});
+$("ed-fetch").addEventListener("click", async () => {
+  const title = $("ed-title").value.trim(), artist = $("ed-artist").value.trim();
+  if (!title) { toast("קודם ממלאים את שם השיר"); return; }
+  const box = $("ed-results");
+  box.innerHTML = '<p class="note">🔎 מחפש מילים מסונכרנות במאגר…</p>';
+  let list = [];
+  try { list = await lrclibSearch(title, artist); }
+  catch (e) { box.innerHTML = '<p class="note">החיפוש נכשל (אין רשת?) — אפשר להדביק מילים ידנית.</p>'; return; }
+  list = (list || []).filter(r => r.syncedLyrics || r.plainLyrics).slice(0, 6);
+  if (!list.length) { box.innerHTML = '<p class="note">לא נמצאו מילים לשיר הזה במאגר — אפשר להדביק ידנית או לסנכרן עם ⏱.</p>'; return; }
+  box.innerHTML = list.map((r, i) => {
+    const match = draft.duration && r.duration && Math.abs(r.duration - draft.duration) <= 4;
+    return '<div class="lyr-res" data-i="' + i + '"><b>' + esc(r.trackName) + " — " + esc(r.artistName) + "</b>" +
+      '<span>' + (r.syncedLyrics ? "🎯 מסונכרן" : "📄 טקסט בלבד") + " · " + fmt(r.duration || 0) +
+      (match ? " · ⏱ תואם לקובץ שלך" : "") + "</span></div>";
+  }).join("");
+  box.querySelectorAll(".lyr-res").forEach(el => el.addEventListener("click", () => {
+    const r = list[+el.dataset.i];
+    $("ed-lyr").value = r.syncedLyrics || r.plainLyrics || "";
+    if (!$("ed-artist").value) $("ed-artist").value = r.artistName || "";
+    updateLyrState();
+    box.innerHTML = "";
+    toast(r.syncedLyrics ? "🎯 נטענו מילים מסונכרנות!" : "נטענו מילים (ללא סנכרון)");
+  }));
+});
+$("ed-save").addEventListener("click", async () => {
+  if (!draft.blob && !draft.ytId) { toast("בוחרים קובץ שמע או קישור YouTube"); return; }
+  const title = $("ed-title").value.trim();
+  if (!title) { toast("חסר שם לשיר"); return; }
+  draft.title = title;
+  draft.artist = $("ed-artist").value.trim();
+  draft.lyrics = $("ed-lyr").value.trim();
+  try { await dbPut(draft); } catch (e) { toast("השמירה נכשלה: " + e); return; }
+  draft = null;
+  await renderLib();
+  showScreen("lib");
+  toast("✅ השיר נשמר בספרייה");
+});
+$("ed-del").addEventListener("click", async () => {
+  if (!confirm("למחוק את השיר מהספרייה?")) return;
+  await dbDel(draft.id);
+  draft = null;
+  await renderLib();
+  showScreen("lib");
+  toast("השיר נמחק");
+});
+$("btn-add").addEventListener("click", () => openEdit(null));
+
+/* ---------------- Tap-sync (manual lyric timing) ---------------- */
+const SY = { lines: [], stamps: [], audio: null, url: null };
+$("ed-sync").addEventListener("click", () => {
+  if (!draft || !draft.blob) {
+    toast(draft && draft.ytId ? "סנכרון ידני בהקשות זמין רק לשירים מקובץ — ל-YouTube מחפשים מילים עם 🔎" : "קודם בוחרים קובץ שמע");
+    return;
+  }
+  const raw = $("ed-lyr").value;
+  const parsed = parseLrc(raw);
+  const lines = parsed ? parsed.map(l => l.text)
+    : raw.split(/\r?\n/).map(s => s.replace(/\[[^\]]*\]/g, "").trim()).filter(Boolean);
+  if (!lines.length) { toast("קודם מדביקים את מילות השיר"); return; }
+  SY.lines = lines; SY.stamps = [];
+  SY.url = URL.createObjectURL(draft.blob);
+  SY.audio = new Audio(SY.url);
+  renderSync();
+  $("syncov").classList.remove("hidden");
+});
+function renderSync() {
+  const next = SY.stamps.length;
+  $("sy-lines").innerHTML = SY.lines.map((ln, i) => {
+    const cls = i < next ? "done" : (i === next ? "next" : "");
+    const tm = i < next ? '<span class="tm">' + lrcStamp(SY.stamps[i]) + "</span>" : "";
+    return '<div class="sy-ln ' + cls + '" dir="auto">' + esc(ln) + tm + "</div>";
+  }).join("");
+  const el = $("sy-lines").children[Math.max(0, next - 1)];
+  if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
+  $("sy-play").textContent = SY.audio && !SY.audio.paused ? "⏸ השהיה" : "▶ ניגון";
+}
+$("sy-play").addEventListener("click", () => {
+  if (!SY.audio) return;
+  if (SY.audio.paused) SY.audio.play(); else SY.audio.pause();
+  setTimeout(renderSync, 60);
+});
+$("sy-back").addEventListener("click", () => { if (SY.audio) SY.audio.currentTime = Math.max(0, SY.audio.currentTime - 3); });
+$("sy-stamp").addEventListener("click", () => {
+  if (!SY.audio || SY.stamps.length >= SY.lines.length) return;
+  SY.stamps.push(SY.audio.currentTime);
+  renderSync();
+  if (navigator.vibrate) navigator.vibrate(15);
+});
+$("sy-undo").addEventListener("click", () => { SY.stamps.pop(); renderSync(); });
+function closeSync() {
+  if (SY.audio) { SY.audio.pause(); SY.audio = null; }
+  if (SY.url) { URL.revokeObjectURL(SY.url); SY.url = null; }
+  $("syncov").classList.add("hidden");
+}
+$("sy-cancel").addEventListener("click", closeSync);
+$("sy-done").addEventListener("click", () => {
+  if (!SY.stamps.length) { toast("לא סומנה אף שורה"); return; }
+  const lrc = SY.stamps.map((t, i) => lrcStamp(t) + " " + SY.lines[i]).join("\n");
+  const left = SY.lines.length - SY.stamps.length;
+  $("ed-lyr").value = lrc;
+  updateLyrState();
+  closeSync();
+  toast(left > 0 ? "נשמרו " + SY.stamps.length + " שורות (נשארו " + left + " ללא סנכרון)" : "🎯 כל השורות סונכרנו!");
+});
+
+/* ---------------- Stage (performance mode) ---------------- */
+const ST = { song: null, lines: null, lineEls: [], activeIdx: -1, raf: 0, recOn: false, wake: null };
+
+async function openStage(song) {
+  const isYt = !!song.ytId;
+  P.mode = isYt ? "yt" : "file";
+  $("stage").classList.remove("hidden");
+  $("st-yt").classList.toggle("hidden", !isYt);
+  $("st-viz").classList.toggle("hidden", isYt);
+  $("st-rec").classList.toggle("hidden", isYt);
+  busy(isYt ? "טוען את נגן YouTube…" : "טוען ומעבד את השיר…");
+  try {
+    if (isYt) await YTP.open(song.ytId);
+    else await E.load(song.blob);
+  } catch (e) {
+    busy(false);
+    $("stage").classList.add("hidden");
+    toast(isYt ? "הסרטון לא נטען — ייתכן שבעל הזכויות חסם הטמעה, נסו קליפ אחר"
+               : "לא הצלחתי לפענח את קובץ השמע");
+    return;
+  }
+  busy(false);
+  ST.song = song;
+  song.lastPlayed = Date.now();
+  if (isYt && YTP.dur && Math.abs((song.duration || 0) - YTP.dur) > 1) song.duration = YTP.dur;
+  dbPut(song).catch(() => {});
+  $("st-t1").textContent = song.title;
+  $("st-t2").textContent = song.artist || "";
+  $("st-dur").textContent = fmt(P.dur());
+  /* per-song settings + mode-specific mixer rows */
+  const s = song.settings || {};
+  const vol = s.vol != null ? s.vol : 95;
+  const rate = s.rate || 1;
+  const remRow = $("mx-rem").closest(".mx-row");
+  const keyRow = $("mx-key-v").closest(".mx-row");
+  const tempoRow = $("mx-tempo").closest(".mx-row");
+  if (isYt) {
+    remRow.classList.add("hidden");
+    $("mx-mononote").classList.add("hidden");
+    keyRow.classList.add("hidden");
+    tempoRow.classList.remove("hidden");
+    YTP.setRate(rate);
+    YTP.setVol(vol / 100);
+  } else {
+    remRow.classList.remove("hidden");
+    const removal = E.mono ? 0 : (s.removal != null ? s.removal : 1);
+    E.setRemoval(removal);
+    E.setKey(s.key || 0);
+    E.setRate(rate);
+    E.setVolume(vol / 100);
+    $("mx-rem").value = Math.round(removal * 100); $("mx-rem-v").textContent = Math.round(removal * 100) + "%";
+    $("mx-rem").disabled = E.mono;
+    $("mx-mononote").classList.toggle("hidden", !E.mono);
+    $("mx-key-v").textContent = (E.key > 0 ? "+" : "") + E.key;
+    keyRow.classList.toggle("hidden", !E.workletOk);
+    tempoRow.classList.toggle("hidden", !E.workletOk);
+    E.onend = () => { updatePlayBtn(); };
+  }
+  $("mx-tempo").value = Math.round(rate * 100); $("mx-tempo-v").textContent = Math.round(rate * 100) + "%";
+  $("mx-vol").value = vol; $("mx-vol-v").textContent = vol + "%";
+  buildLyrics(song);
+  $("st-mix").classList.add("hidden");
+  wakeLock(true);
+  P.play().then(updatePlayBtn).catch(() => {});
+  cancelAnimationFrame(ST.raf);
+  stTick();
+}
+
+function buildLyrics(song) {
+  ST.lines = parseLrc(song.lyrics);
+  ST.activeIdx = -1; ST.lineEls = [];
+  const box = $("st-lyr");
+  if (ST.lines) {
+    box.innerHTML = '<div class="ly-count" id="st-count"></div>' +
+      ST.lines.map(l => {
+        const inner = l.words
+          ? l.words.map(w => '<span class="w">' + esc(w.text) + "</span>").join(" ")
+          : esc(l.text);
+        return '<div class="ly" dir="auto">' + inner + "</div>";
+      }).join("") + '<div class="ly-end">🎤✨</div>';
+    ST.lineEls = [...box.querySelectorAll(".ly")];
+  } else if (song.lyrics) {
+    box.innerHTML = '<div class="ly-plainnote">מילים ללא סנכרון — גללו בקצב שלכם (⏱ בעריכת השיר מוסיף סנכרון)</div>' +
+      song.lyrics.split(/\r?\n/).map(ln =>
+        '<div class="ly on" style="transform:none;font-size:19px" dir="auto">' + (esc(ln) || "&nbsp;") + "</div>").join("");
+  } else {
+    box.innerHTML = '<div class="empty" style="color:rgba(240,240,242,.5)"><span class="big">🎼</span>' +
+      "אין מילים לשיר הזה.<br>אפשר להוסיף דרך ✏️ בספרייה — חיפוש אוטומטי במאגר או הדבקה ידנית.</div>";
+  }
+}
+
+function stTick() {
+  ST.raf = requestAnimationFrame(stTick);
+  const pos = P.cur(), dur = P.dur();
+  $("st-cur").textContent = fmt(pos);
+  if (dur) $("st-dur").textContent = fmt(dur);
+  const seek = $("st-seek");
+  if (!seek.matches(":active") && dur) seek.value = Math.round(pos / dur * 1000);
+  drawViz();
+  if (!ST.lines) return;
+  /* current line = last line whose start ≤ pos */
+  let idx = -1;
+  for (let i = 0; i < ST.lines.length; i++) { if (ST.lines[i].t <= pos) idx = i; else break; }
+  if (idx !== ST.activeIdx) {
+    ST.lineEls.forEach((el, i) => {
+      el.classList.toggle("on", i === idx);
+      el.classList.toggle("past", i < idx);
+    });
+    ST.activeIdx = idx;
+    const target = ST.lineEls[Math.max(0, idx)];
+    if (target) target.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+  /* intro countdown dots */
+  const cnt = $("st-count");
+  if (cnt) {
+    const first = ST.lines[0].t;
+    if (idx === -1 && first - pos <= 5 && first - pos > 0.2)
+      cnt.textContent = "●".repeat(Math.min(4, Math.ceil(first - pos)));
+    else cnt.textContent = "";
+  }
+  /* word-level highlight inside the active line */
+  if (idx >= 0 && ST.lines[idx].words) {
+    const spans = ST.lineEls[idx].querySelectorAll(".w");
+    ST.lines[idx].words.forEach((w, i) => {
+      if (spans[i]) spans[i].classList.toggle("sung", w.t <= pos);
+    });
+  }
+}
+
+function drawViz() {
+  if (P.mode === "yt") return;
+  const cv = $("st-viz");
+  if (!E.ctx || !E.nodes.an) return;
+  const W = cv.clientWidth, H = cv.clientHeight;
+  if (cv.width !== W * devicePixelRatio) { cv.width = W * devicePixelRatio; cv.height = H * devicePixelRatio; }
+  const g = cv.getContext("2d");
+  g.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  g.clearRect(0, 0, W, H);
+  const data = new Uint8Array(E.nodes.an.frequencyBinCount);
+  E.nodes.an.getByteFrequencyData(data);
+  const bars = 36, step = Math.floor(data.length / bars);
+  const bw = W / bars;
+  for (let i = 0; i < bars; i++) {
+    const v = data[i * step] / 255;
+    const h = Math.max(2, v * H * .92);
+    g.fillStyle = "rgba(" + Math.round(106 + v * 120) + "," + Math.round(168 - v * 40) + ",79," + (0.25 + v * 0.55) + ")";
+    g.fillRect(i * bw + 1.5, H - h, bw - 3, h);
+  }
+}
+
+function updatePlayBtn() { $("st-play").textContent = P.playing() ? "⏸" : "▶"; }
+
+async function wakeLock(on) {
+  try {
+    if (on && "wakeLock" in navigator) ST.wake = await navigator.wakeLock.request("screen");
+    else if (!on && ST.wake) { ST.wake.release(); ST.wake = null; }
+  } catch (e) {}
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && !$("stage").classList.contains("hidden")) wakeLock(true);
+});
+
+$("st-play").addEventListener("click", async () => {
+  if (P.playing()) P.pause(); else await P.play();
+  updatePlayBtn();
+});
+$("st-back10").addEventListener("click", () => { P.seek(P.cur() - 10); });
+$("st-fwd10").addEventListener("click", () => { P.seek(P.cur() + 10); });
+$("st-seek").addEventListener("change", e => { P.seek(+e.target.value / 1000 * P.dur()); });
+$("st-mixbtn").addEventListener("click", () => $("st-mix").classList.toggle("hidden"));
+
+$("st-close").addEventListener("click", () => {
+  P.pause();
+  if (ST.recOn) stopRecording();
+  if (E.micOn) micToggle(false);
+  wakeLock(false);
+  cancelAnimationFrame(ST.raf);
+  /* persist per-song mixer settings */
+  if (ST.song) {
+    const prev = ST.song.settings || {};
+    ST.song.settings = {
+      removal: P.mode === "file" && !E.mono ? E.removal : (prev.removal != null ? prev.removal : 1),
+      key: P.mode === "file" ? E.key : (prev.key || 0),
+      rate: +$("mx-tempo").value / 100,
+      vol: +$("mx-vol").value
+    };
+    dbPut(ST.song).catch(() => {});
+  }
+  ST.song = null;
+  if (P.mode === "yt") YTP.destroy();
+  $("stage").classList.add("hidden");
+  renderLib();
+});
+
+/* mixer wiring */
+$("mx-rem").addEventListener("input", e => {
+  const v = +e.target.value;
+  $("mx-rem-v").textContent = v + "%";
+  E.setRemoval(v / 100);
+});
+$("mx-keyup").addEventListener("click", () => setKeyUI(Math.min(6, E.key + 1)));
+$("mx-keydn").addEventListener("click", () => setKeyUI(Math.max(-6, E.key - 1)));
+function setKeyUI(k) {
+  E.setKey(k);
+  $("mx-key-v").textContent = (k > 0 ? "+" : "") + k;
+}
+$("mx-tempo").addEventListener("input", e => {
+  const v = +e.target.value;
+  $("mx-tempo-v").textContent = v + "%";
+  if (P.mode === "yt") YTP.setRate(v / 100); else E.setRate(v / 100);
+});
+$("mx-vol").addEventListener("input", e => {
+  const v = +e.target.value;
+  $("mx-vol-v").textContent = v + "%";
+  if (P.mode === "yt") YTP.setVol(v / 100); else E.setVolume(v / 100);
+});
+
+/* microphone */
+async function micToggle(on) {
+  if (on) {
+    try { await E.micStart(); }
+    catch (e) { toast("אין גישה למיקרופון — בודקים הרשאות בדפדפן"); return; }
+    E.setMicVol(+$("mx-micvol").value / 100);
+    E.setEcho(+$("mx-echo").value / 100);
+    E.setReverb(+$("mx-rev").value / 100);
+    toast("🎙️ המיקרופון חי — עדיף אוזניות!");
+  } else E.micStop();
+  $("mx-micbtn").textContent = E.micOn ? "פעיל" : "כבוי";
+  $("mx-micbtn").classList.toggle("on", E.micOn);
+  $("st-mic").classList.toggle("on", E.micOn);
+  $("mx-microws").classList.toggle("hidden", !E.micOn);
+}
+$("mx-micbtn").addEventListener("click", () => micToggle(!E.micOn));
+$("st-mic").addEventListener("click", () => {
+  micToggle(!E.micOn);
+  if (!E.micOn) $("st-mix").classList.remove("hidden");
+});
+$("mx-micvol").addEventListener("input", e => { $("mx-micvol-v").textContent = e.target.value + "%"; E.setMicVol(+e.target.value / 100); });
+$("mx-echo").addEventListener("input", e => { $("mx-echo-v").textContent = e.target.value + "%"; E.setEcho(+e.target.value / 100); });
+$("mx-rev").addEventListener("input", e => { $("mx-rev-v").textContent = e.target.value + "%"; E.setReverb(+e.target.value / 100); });
+
+/* recording */
+function stopRecording() {
+  const base = (ST.song ? ST.song.title : "karaoke") + " - ביצוע " + new Date().toISOString().slice(0, 10);
+  E.recStop(base);
+  ST.recOn = false;
+  $("st-rec").classList.remove("rec");
+}
+$("st-rec").addEventListener("click", () => {
+  if (ST.recOn) { stopRecording(); return; }
+  if (!E.recStart()) { toast("הדפדפן הזה לא תומך בהקלטה"); return; }
+  ST.recOn = true;
+  $("st-rec").classList.add("rec");
+  toast("⏺ מקליט את הביצוע (מוזיקה + מיקרופון)");
+});
+
+/* ---------------- boot ---------------- */
+renderLib();
+</script>
+</body>
+</html>
