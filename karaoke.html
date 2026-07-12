@@ -76,6 +76,8 @@ try { if (!localStorage.getItem("sb-xgorkdbiptrhdykplodn-auth-token")) location.
   .rowbtns button{flex:1;min-width:120px;padding:11px 10px;border-radius:12px;background:rgba(0,0,0,.06);
     font-size:12.5px;font-weight:800;color:var(--ink)}
   .rowbtns button:active{transform:scale(.97)}
+  #ed-aiq button{min-width:90px}
+  #ed-aiq button.on{background:var(--purple);color:#fff}
   .btn-primary{display:block;width:100%;padding:15px;margin:14px 0 6px;border-radius:16px;background:var(--green-d);
     color:#fff;font-size:16px;font-weight:800;box-shadow:0 4px 14px rgba(47,122,61,.3)}
   .btn-danger{display:block;width:100%;padding:12px;border-radius:14px;background:none;color:var(--red);
@@ -297,6 +299,13 @@ try { if (!localStorage.getItem("sb-xgorkdbiptrhdykplodn-auth-token")) location.
       "הסרת שירה" עובר לעבוד עליו — בלי ה"חלל" של השיטה הרגילה.</p>
       <p class="note">בפעם הראשונה יורד קובץ מודל (~174MB) שנשמר במכשיר. במחשב עם GPU זה לוקח דקות
       בודדות; בטלפון או בלי GPU — הרבה יותר איטי.</p>
+      <div class="sec-t">רמת איכות</div>
+      <div class="rowbtns" id="ed-aiq">
+        <button type="button" data-q="fast">⚡ מהיר</button>
+        <button type="button" data-q="quality">✨ איכותי</button>
+        <button type="button" data-q="max">💎 מקסימלי</button>
+      </div>
+      <p class="note" id="ed-aiqnote"></p>
       <p class="note" id="ed-aistate" style="color:var(--green-d);font-weight:700"></p>
       <button class="btn-primary" id="ed-airun" style="background:var(--purple);box-shadow:0 4px 14px rgba(123,94,167,.35)">✨ יצירת פלייבק AI</button>
     </div>
@@ -1057,7 +1066,7 @@ $("ed-file").addEventListener("change", async e => {
   draft.blob = f; draft.fileName = f.name;
   draft.ytId = null; renderYtPrev();
   /* a new file invalidates a previously rendered AI playback */
-  if (draft.aiBlob) { draft.aiBlob = null; draft.aiAt = null; }
+  if (draft.aiBlob) { draft.aiBlob = null; draft.aiAt = null; draft.aiQuality = null; }
   updateAiCard();
   $("ed-fname").textContent = f.name;
   /* duration via a throwaway <audio> — no full decode needed at import time */
@@ -1086,7 +1095,7 @@ $("ed-ytload").addEventListener("click", async () => {
   if (!id) { toast("זה לא נראה כמו קישור YouTube תקין"); return; }
   draft.ytId = id;
   draft.blob = null; draft.fileName = ""; draft.duration = 0;
-  draft.aiBlob = null; draft.aiAt = null;
+  draft.aiBlob = null; draft.aiAt = null; draft.aiQuality = null;
   $("ed-fname").textContent = "לא נבחר קובץ"; $("ed-fmeta").textContent = "";
   renderYtPrev();
   updateAiCard();
@@ -1166,7 +1175,39 @@ $("ed-del").addEventListener("click", async () => {
 $("btn-add").addEventListener("click", () => openEdit(null));
 
 /* ---------------- AI playback rendering (Demucs in a worker) ---------------- */
-const AI = { worker: null, songId: null };
+const AI = { worker: null, songId: null, quality: null };
+/* quality tiers — the demucs "shift trick" (averaged time-shifted runs) plus
+   denser chunk overlap; fast is bit-identical to the original pipeline */
+const AI_TIERS = {
+  fast:    { shifts: 0, overlap: 0.25, label: "מהיר",    note: "ריצה אחת — הכי מהיר, איכות מלאה של המודל" },
+  quality: { shifts: 2, overlap: 0.25, label: "איכותי",  note: "מיצוע 2 ריצות מוסטות-זמן — פחות ארטיפקטים (זמן כפול)" },
+  max:     { shifts: 4, overlap: 0.5,  label: "מקסימלי", note: "מיצוע 4 ריצות + חפיפה כפולה — הכי נקי (פי ~6 זמן, מומלץ עם GPU)" }
+};
+/* device heuristic: a real WebGPU adapter on a non-mobile machine → default
+   to "quality"; phones and CPU-only machines default to "fast" */
+let _aiDefaultP = null;
+function aiDefaultQuality() {
+  if (_aiDefaultP) return _aiDefaultP;
+  _aiDefaultP = (async () => {
+    const mobile = (navigator.userAgentData && navigator.userAgentData.mobile) ||
+      /Android|iPhone|iPad|Mobi/i.test(navigator.userAgent);
+    try {
+      if (!mobile && navigator.gpu && await navigator.gpu.requestAdapter()) return "quality";
+    } catch (e) {}
+    return "fast";
+  })();
+  return _aiDefaultP;
+}
+function setAiQuality(q) {
+  AI.quality = q;
+  document.querySelectorAll("#ed-aiq button").forEach(b =>
+    b.classList.toggle("on", b.dataset.q === q));
+  $("ed-aiqnote").textContent = AI_TIERS[q].note;
+}
+$("ed-aiq").addEventListener("click", e => {
+  const b = e.target.closest("button[data-q]");
+  if (b) setAiQuality(b.dataset.q);
+});
 function setAiBar(pct) { $("ai-fill").style.width = Math.max(0, Math.min(100, pct)) + "%"; }
 function finishAI() {
   if (AI.worker) { try { AI.worker.terminate(); } catch (e) {} AI.worker = null; }
@@ -1211,7 +1252,7 @@ async function runAI(song) {
       toast("העיבוד נכשל: " + m.message);
     } else if (m.type === "done") {
       const blob = new Blob([m.wav], { type: "audio/wav" });
-      song.aiBlob = blob; song.aiAt = Date.now();
+      song.aiBlob = blob; song.aiAt = Date.now(); song.aiQuality = AI.quality;
       try { await dbPut(song); } catch (e) { finishAI(); toast("שמירת הפלייבק נכשלה: " + e); return; }
       finishAI();
       if (draft && draft.id === song.id) { draft.aiBlob = blob; draft.aiAt = song.aiAt; updateAiCard(); }
@@ -1219,7 +1260,9 @@ async function runAI(song) {
       toast("✨ הפלייבק המקצועי מוכן! (מנוע: " + (m.backend === "webgpu" ? "GPU" : "CPU") + ")");
     }
   };
-  const payload = { cmd: "separate", channelData: [L, R], sampleRate: sr };
+  const tier = AI_TIERS[AI.quality] || AI_TIERS.fast;
+  const payload = { cmd: "separate", channelData: [L, R], sampleRate: sr,
+                    shifts: tier.shifts, overlap: tier.overlap };
   w.postMessage(payload, [L.buffer, R.buffer]);
 }
 $("ai-cancel").addEventListener("click", () => { finishAI(); toast("העיבוד בוטל"); });
@@ -1227,8 +1270,11 @@ function updateAiCard() {
   const card = $("ed-aicard");
   if (!draft || draft.ytId || !draft.blob) { card.classList.add("hidden"); return; }
   card.classList.remove("hidden");
+  if (AI.quality) setAiQuality(AI.quality);
+  else aiDefaultQuality().then(q => { if (!AI.quality) setAiQuality(q); });
+  const qLabel = draft.aiQuality && AI_TIERS[draft.aiQuality] ? " (איכות: " + AI_TIERS[draft.aiQuality].label + ")" : "";
   $("ed-aistate").textContent = draft.aiBlob
-    ? "✅ קיים פלייבק AI לשיר הזה — בבמה, סליידר \"הסרת שירה\" עובד עליו."
+    ? "✅ קיים פלייבק AI לשיר הזה" + qLabel + " — בבמה, סליידר \"הסרת שירה\" עובד עליו."
     : "";
   $("ed-airun").textContent = draft.aiBlob ? "✨ יצירת הפלייבק מחדש" : "✨ יצירת פלייבק AI";
 }

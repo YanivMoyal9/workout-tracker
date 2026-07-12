@@ -454,10 +454,16 @@ async function applyInference(model, mix) {
   const out = cropToValidLength(sumBeforeCrop, validLength);
   return centerTrim(out, length);
 }
-async function applySplits(model, mix, progressCallback, overlap = 0.25) {
+/* wantedSource: accumulate only that stem across the full track (the model
+   still predicts all four per chunk) — cuts full-song memory by 4x */
+async function applySplits(model, mix, progressCallback, overlap = 0.25, wantedSource = null) {
   const [batch, channels, length] = mix.shape;
-  const sources = model.sources.length;
-  const outData = new Float32Array(batch * sources * channels * length);
+  const nSources = model.sources.length;
+  const srcIdxs = wantedSource == null
+    ? model.sources.map((_, i) => i)
+    : [model.sources.indexOf(wantedSource)];
+  const nOut = srcIdxs.length;
+  const outData = new Float32Array(batch * nOut * channels * length);
   const sumWeight = new Float32Array(length);
   const segment = Math.floor(model.samplerate * model.segment);
   const stride = Math.floor((1 - overlap) * segment);
@@ -474,13 +480,15 @@ async function applySplits(model, mix, progressCallback, overlap = 0.25) {
     const chunkOut = await applyInference(model, chunk);
     const chunkLength = chunkOut.shape[chunkOut.shape.length - 1];
     for (let b = 0; b < batch; b++)
-      for (let s = 0; s < sources; s++)
+      for (let si = 0; si < nOut; si++) {
+        const s = srcIdxs[si];
         for (let c = 0; c < channels; c++)
           for (let t = 0; t < chunkLength; t++) {
-            const outIdx = b * sources * channels * length + s * channels * length + c * length + offset + t;
-            const chunkIdx = b * sources * channels * chunkLength + s * channels * chunkLength + c * chunkLength + t;
+            const outIdx = b * nOut * channels * length + si * channels * length + c * length + offset + t;
+            const chunkIdx = b * nSources * channels * chunkLength + s * channels * chunkLength + c * chunkLength + t;
             outData[outIdx] += weight[t] * chunkOut.data[chunkIdx];
           }
+      }
     for (let t = 0; t < chunkLength && offset + t < length; t++)
       sumWeight[offset + t] += weight[t];
     offset += stride;
@@ -491,7 +499,58 @@ async function applySplits(model, mix, progressCallback, overlap = 0.25) {
     const timeIdx = i % length;
     if (sumWeight[timeIdx] > 0) outData[i] /= sumWeight[timeIdx];
   }
-  return { data: outData, shape: [batch, sources, channels, length] };
+  return {
+    data: outData,
+    shape: [batch, nOut, channels, length],
+    sources: srcIdxs.map(i => model.sources[i]),
+  };
+}
+
+/* The demucs "shift trick" (apply.py): run the model over time-shifted copies
+   of the mix and average the un-shifted outputs. Evenly spaced deterministic
+   offsets replace upstream's random ones — same averaging benefit,
+   reproducible output. shifts=0 bypasses entirely (identical to before). */
+async function applyShifts(model, mix, progressCallback, overlap, wantedSource, shifts) {
+  if (!shifts) return applySplits(model, mix, progressCallback, overlap, wantedSource);
+  const [batch, channels, length] = mix.shape;
+  const maxShift = Math.floor(0.5 * model.samplerate);
+  const padded = new TensorChunk(mix).padded(length + 2 * maxShift);
+  const offsets = [];
+  for (let i = 0; i < shifts; i++)
+    offsets.push(shifts === 1 ? Math.floor(maxShift / 2) : Math.round(i * maxShift / (shifts - 1)));
+  /* unified progress across all shift runs */
+  const segment = Math.floor(model.samplerate * model.segment);
+  const stride = Math.floor((1 - overlap) * segment);
+  const runTotals = offsets.map(off => Math.ceil((length + maxShift - off) / stride));
+  const grandTotal = runTotals.reduce((a, b) => a + b, 0);
+  let base = 0, acc = null, accShape = null, accSources = null;
+  for (let i = 0; i < shifts; i++) {
+    const off = offsets[i];
+    const viewLen = length + maxShift - off;
+    /* materialize the shifted view as a plain tensor (padded() with a
+       target equal to the chunk length is an exact copy) */
+    const shifted = new TensorChunk(padded, off, viewLen).padded(viewLen);
+    const res = await applySplits(
+      model, { data: shifted.data, shape: [batch, channels, viewLen] },
+      (done) => { if (progressCallback) progressCallback(base + Math.min(done, runTotals[i]), grandTotal); },
+      overlap, wantedSource);
+    base += runTotals[i];
+    if (!acc) {
+      accShape = [...res.shape];
+      accShape[accShape.length - 1] = length;
+      acc = new Float32Array(accShape.reduce((a, b) => a * b, 1));
+      accSources = res.sources;
+    }
+    const skip = maxShift - off;
+    const resLen = res.shape[res.shape.length - 1];
+    const outer = acc.length / length;
+    for (let o = 0; o < outer; o++) {
+      const ro = o * resLen + skip, ao = o * length;
+      for (let t = 0; t < length; t++) acc[ao + t] += res.data[ro + t];
+    }
+  }
+  for (let i = 0; i < acc.length; i++) acc[i] /= shifts;
+  return { data: acc, shape: accShape, sources: accSources };
 }
 function planarize(channelData) {
   const channels = channelData.length;
@@ -501,21 +560,21 @@ function planarize(channelData) {
   for (let c = 0; c < channels; c++) data.set(channelData[c], c * samples);
   return data;
 }
-async function separateTracks(model, rawAudio, progressCallback, overlap = 0.25) {
+async function separateTracks(model, rawAudio, progressCallback, overlap = 0.25, shifts = 0, wantedSource = null) {
   const { channelData, sampleRate } = rawAudio;
   const channels = channelData.length;
   const samples = channelData[0].length;
   const mix = { data: planarize(channelData), shape: [1, channels, samples] };
-  const result = await applySplits(model, mix, progressCallback, overlap);
-  const [, sources, , length] = result.shape;
+  const result = await applyShifts(model, mix, progressCallback, overlap, wantedSource, shifts);
+  const [, nOut, , length] = result.shape;
   const tracks = {};
-  for (let s = 0; s < sources; s++) {
+  for (let s = 0; s < nOut; s++) {
     const stemChannels = [];
     for (let c = 0; c < channels; c++) {
       const startIdx = s * channels * length + c * length;
       stemChannels.push(new Float32Array(result.data.buffer, startIdx * 4, length));
     }
-    tracks[model.sources[s]] = { channelData: stemChannels, sampleRate };
+    tracks[result.sources[s]] = { channelData: stemChannels, sampleRate };
   }
   return tracks;
 }
@@ -646,7 +705,7 @@ if (typeof importScripts === "function") {
       importScripts(base + "ort/ort.all.min.js");
       ort.env.wasm.wasmPaths = base + "ort/";
       ort.env.wasm.numThreads = 1;         /* GitHub Pages has no COOP/COEP */
-      const weights = await cachedModel(base);
+      let weights = await cachedModel(base);
       let model, backend = "webgpu";
       try {
         model = await ONNXHTDemucs.init(ort, weights, ["webgpu"]);
@@ -654,6 +713,7 @@ if (typeof importScripts === "function") {
         backend = "wasm";
         model = await ONNXHTDemucs.init(ort, weights, ["wasm"]);
       }
+      weights = null;      /* the session holds its own copy — free 174MB */
       /* normalize like the official demucs CLI (separate.py): zero-mean,
          unit-std of the mono reference — the model expects this range */
       const chs = msg.channelData;
@@ -670,10 +730,15 @@ if (typeof importScripts === "function") {
       for (const ch of chs)
         for (let i = 0; i < ch.length; i++) ch[i] = (ch[i] - mean) / std;
 
+      /* quality knobs from the main thread; vocals is the only stem the
+         karaoke instrumental needs, so only it is accumulated full-length */
+      const shifts = msg.shifts | 0;
+      const overlap = msg.overlap || 0.25;
       const stems = await separateTracks(
         model,
         { channelData: chs, sampleRate: msg.sampleRate },
-        (done, total) => postMessage({ type: "progress", done, total })
+        (done, total) => postMessage({ type: "progress", done, total }),
+        overlap, shifts, "vocals"
       );
       /* instrumental = mix - vocals (means cancel in the difference), scaled
          back to the original level; keeps every non-vocal detail intact */
