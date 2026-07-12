@@ -1213,26 +1213,64 @@ function finishAI() {
   if (AI.worker) { try { AI.worker.terminate(); } catch (e) {} AI.worker = null; }
   AI.songId = null;
   $("aiov").classList.add("hidden");
+  if ($("stage").classList.contains("hidden")) wakeLock(false);
+}
+/* Decode a song blob to a 44.1kHz AudioBuffer (the model's rate).
+   Chrome & co. decode straight on a 44.1kHz OfflineAudioContext; Safari
+   can't decode on an OfflineAudioContext at all, so fall back to the
+   regular AudioContext (promise then callback form) and resample by
+   rendering through an OfflineAudioContext, which Safari does support. */
+async function decodeTo441(blob) {
+  try {
+    const oc = new OfflineAudioContext(2, 44100, 44100);
+    return await oc.decodeAudioData(await blob.arrayBuffer());
+  } catch (e) {}
+  await E.ensure();
+  let buf = null;
+  try { buf = await E.ctx.decodeAudioData(await blob.arrayBuffer()); } catch (e) {}
+  if (!buf) {
+    buf = await new Promise((res, rej) => {
+      blob.arrayBuffer()
+        .then(ab => { E.ctx.decodeAudioData(ab, res, rej); })
+        .catch(rej);
+    });
+  }
+  if (!buf) throw new Error("decode failed");
+  if (buf.sampleRate !== 44100) {
+    const len = Math.ceil(buf.duration * 44100);
+    const oc = new OfflineAudioContext(2, len, 44100);
+    const src = oc.createBufferSource();
+    src.buffer = buf; src.connect(oc.destination); src.start(0);
+    buf = await oc.startRendering();
+  }
+  return buf;
 }
 async function runAI(song) {
   if (AI.worker) { toast("כבר רץ עיבוד — מחכים שיסתיים"); return; }
   busy("מפענח את קובץ השמע…");
   let L, R, sr;
   try {
-    const ab = await song.blob.arrayBuffer();
-    /* decode + resample to the model's 44.1kHz */
-    const oc = new OfflineAudioContext(2, 44100, 44100);
-    const buf = await oc.decodeAudioData(ab);
+    const buf = await decodeTo441(song.blob);
     sr = buf.sampleRate;
     L = buf.getChannelData(0).slice();
     R = (buf.numberOfChannels > 1 ? buf.getChannelData(1) : buf.getChannelData(0)).slice();
-  } catch (e) { busy(false); toast("פענוח הקובץ נכשל"); return; }
+  } catch (e) {
+    busy(false);
+    toast("פענוח הקובץ נכשל (" + ((e && (e.name || e.message)) || "שגיאה") + ") — נסו קובץ MP3/M4A סטנדרטי");
+    return;
+  }
   busy(false);
   if (L.length / sr > 720 && !confirm("השיר ארוך מ-12 דקות — העיבוד יהיה ארוך במיוחד. להמשיך?")) return;
+  const tierSel = AI_TIERS[AI.quality] || AI_TIERS.fast;
+  const onMobile = (navigator.userAgentData && navigator.userAgentData.mobile) ||
+    /Android|iPhone|iPad|Mobi/i.test(navigator.userAgent);
+  if (tierSel.shifts >= 2 && onMobile &&
+      !confirm("רמת איכות גבוהה בטלפון עלולה לקחת שעה ויותר, והמסך חייב להישאר פתוח.\nבמחשב זה מהיר משמעותית. להמשיך בכל זאת?")) return;
   $("ai-title").textContent = song.title;
   $("ai-phase").textContent = "מכין את המנוע…";
   setAiBar(0);
   $("aiov").classList.remove("hidden");
+  wakeLock(true);      /* keep the screen on for the long render */
   let w;
   try { w = new Worker("ai/separate-worker.js"); }
   catch (e) { finishAI(); toast("הדפדפן לא הצליח להריץ את מנוע ה-AI"); return; }
@@ -1520,7 +1558,8 @@ async function wakeLock(on) {
   } catch (e) {}
 }
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible" && !$("stage").classList.contains("hidden")) wakeLock(true);
+  if (document.visibilityState === "visible" &&
+      (!$("stage").classList.contains("hidden") || AI.worker)) wakeLock(true);
 });
 
 $("st-play").addEventListener("click", async () => {
