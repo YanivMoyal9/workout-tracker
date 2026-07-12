@@ -105,6 +105,22 @@ try { if (!localStorage.getItem("sb-xgorkdbiptrhdykplodn-auth-token")) location.
   #ed-ytprev .fi span{font-size:11px;color:var(--muted)}
   #ed-ytprev button{padding:8px 12px;border-radius:10px;background:rgba(0,0,0,.08);font-size:12px;font-weight:800;flex:none}
   .badge.yt{background:rgba(198,75,60,.12);color:var(--red)}
+  .badge.ai{background:rgba(123,94,167,.14);color:var(--purple)}
+
+  /* ===== AI processing overlay ===== */
+  #aiov{position:fixed;inset:0;z-index:160;background:rgba(20,21,25,.78);
+    -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+    display:flex;align-items:center;justify-content:center;padding:22px}
+  .ai-bx{background:var(--card);color:var(--ink);border-radius:22px;padding:26px 22px;max-width:360px;width:100%;
+    text-align:center;box-shadow:0 16px 48px rgba(0,0,0,.4)}
+  .ai-bx .ai-em{font-size:40px;margin-bottom:6px;animation:aipulse 1.6s infinite}
+  @keyframes aipulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
+  .ai-bx b{font-size:16px;font-weight:800;display:block}
+  .ai-bx p{font-size:13px;color:var(--muted);margin:8px 0;line-height:1.6}
+  .ai-bar{height:10px;border-radius:6px;background:rgba(0,0,0,.08);overflow:hidden;margin:14px 0}
+  #ai-fill{height:100%;width:0%;border-radius:6px;background:linear-gradient(90deg,var(--purple),var(--green-d));
+    transition:width .3s ease}
+  #ai-cancel{padding:11px 26px;border-radius:12px;background:rgba(0,0,0,.07);font-size:13.5px;font-weight:800;margin-top:6px}
 
   /* ===== Stage (performance mode) ===== */
   #stage{position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;color:#F0F0F2;
@@ -274,6 +290,17 @@ try { if (!localStorage.getItem("sb-xgorkdbiptrhdykplodn-auth-token")) location.
       <p class="note" id="ed-lyrstate"></p>
     </div>
 
+    <div class="card hidden" id="ed-aicard">
+      <div class="sec-t" style="margin-top:0">✨ פלייבק AI — הסרת שירה מקצועית</div>
+      <p class="note">מנוע ההפרדה <b>Demucs</b> של Meta רץ כולו במכשיר שלך (שום דבר לא נשלח לשרת)
+      ומפריד את השירה מהמוזיקה ברמת אולפן. הפלייבק שנוצר נשמר לשיר, ובבמה סליידר
+      "הסרת שירה" עובר לעבוד עליו — בלי ה"חלל" של השיטה הרגילה.</p>
+      <p class="note">בפעם הראשונה יורד קובץ מודל (~174MB) שנשמר במכשיר. במחשב עם GPU זה לוקח דקות
+      בודדות; בטלפון או בלי GPU — הרבה יותר איטי.</p>
+      <p class="note" id="ed-aistate" style="color:var(--green-d);font-weight:700"></p>
+      <button class="btn-primary" id="ed-airun" style="background:var(--purple);box-shadow:0 4px 14px rgba(123,94,167,.35)">✨ יצירת פלייבק AI</button>
+    </div>
+
     <button class="btn-primary" id="ed-save">שמירה בספרייה</button>
     <button class="btn-danger hidden" id="ed-del">מחיקת השיר מהספרייה</button>
     <input type="file" id="ed-file" accept="audio/*" class="hidden" />
@@ -303,6 +330,7 @@ try { if (!localStorage.getItem("sb-xgorkdbiptrhdykplodn-auth-token")) location.
       <div class="val" id="mx-rem-v">100%</div>
     </div>
     <p class="mx-note hidden" id="mx-mononote">⚠️ הקובץ הזה הוא מונו — אי אפשר להפריד ממנו שירה. כדאי קובץ סטריאו או גרסת פלייבק.</p>
+    <p class="mx-note hidden" id="mx-ainote">✨ פועל פלייבק AI (Demucs) — הסליידר עובר בין ההקלטה המקורית לפלייבק באיכות אולפן</p>
     <div class="mx-row">
       <label>🎹 טון (Key)</label>
       <div class="mx-key">
@@ -383,6 +411,18 @@ try { if (!localStorage.getItem("sb-xgorkdbiptrhdykplodn-auth-token")) location.
       <button id="sy-undo">↩ ביטול שורה</button>
     </div>
     <button id="sy-stamp">🎯 השורה המסומנת מתחילה עכשיו</button>
+  </div>
+</div>
+
+<!-- ============ AI separation progress ============ -->
+<div id="aiov" class="hidden">
+  <div class="ai-bx">
+    <div class="ai-em">✨</div>
+    <b id="ai-title"></b>
+    <p id="ai-phase">מכין את המנוע…</p>
+    <div class="ai-bar"><div id="ai-fill"></div></div>
+    <p>העיבוד קורה כולו במכשיר — משאירים את הטאב פתוח</p>
+    <button id="ai-cancel">ביטול</button>
   </div>
 </div>
 
@@ -634,7 +674,8 @@ function makeImpulse(ctx, seconds, decay) {
 const E = {
   ctx: null, workletOk: false, nodes: {},
   buf: null, dur: 0, mono: false,
-  src: null, playing: false, pos: 0, t0: 0, p0: 0,
+  bufAlt: null, ai: false,        /* AI instrumental buffer + mode flag */
+  src: null, srcAlt: null, playing: false, pos: 0, t0: 0, p0: 0,
   rate: 1, key: 0, removal: 1,
   micStream: null, micOn: false,
   rec: null, recChunks: [],
@@ -654,6 +695,10 @@ const E = {
     n.in = ctx.createGain();
     /* force stereo so a mono file becomes identical L/R (side = 0 exactly) */
     n.in.channelCount = 2; n.in.channelCountMode = "explicit"; n.in.channelInterpretation = "speakers";
+    /* dual-source buses: original recording + AI instrumental (crossfaded) */
+    n.srcBus = ctx.createGain(); n.altBus = ctx.createGain();
+    n.altBus.gain.value = 0;
+    n.srcBus.connect(n.in); n.altBus.connect(n.in);
     n.split = ctx.createChannelSplitter(2);
     n.in.connect(n.split);
     n.mid = ctx.createGain(); n.side = ctx.createGain();
@@ -697,11 +742,16 @@ const E = {
     n.an.connect(n.recDest);
   },
 
+  async decodeBlob(blob) {
+    await this.ensure();
+    const ab = await blob.arrayBuffer();
+    return await this.ctx.decodeAudioData(ab);
+  },
+
   async load(blob) {
     await this.ensure();
     this.stopSrc();
-    const ab = await blob.arrayBuffer();
-    this.buf = await this.ctx.decodeAudioData(ab);
+    this.buf = await this.decodeBlob(blob);
     this.dur = this.buf.duration;
     this.mono = this.buf.numberOfChannels < 2;
     this.pos = 0;
@@ -710,6 +760,7 @@ const E = {
 
   stopSrc() {
     if (this.src) { const s = this.src; this.src = null; s.onended = null; try { s.stop(); } catch (e) {} }
+    if (this.srcAlt) { const s = this.srcAlt; this.srcAlt = null; try { s.stop(); } catch (e) {} }
     this.playing = false;
   },
 
@@ -724,8 +775,15 @@ const E = {
     if (this.pos >= this.dur - 0.05) this.pos = 0;
     const s = this.ctx.createBufferSource();
     s.buffer = this.buf; s.playbackRate.value = this.rate;
-    s.connect(this.nodes.in);
+    s.connect(this.nodes.srcBus);
     s.start(0, this.pos);
+    if (this.ai && this.bufAlt) {
+      const s2 = this.ctx.createBufferSource();
+      s2.buffer = this.bufAlt; s2.playbackRate.value = this.rate;
+      s2.connect(this.nodes.altBus);
+      s2.start(0, Math.min(this.pos, Math.max(0, this.bufAlt.duration - 0.01)));
+      this.srcAlt = s2;
+    }
     this.src = s; this.t0 = this.ctx.currentTime; this.p0 = this.pos; this.playing = true;
     s.onended = () => {
       if (this.src !== s) return;
@@ -751,8 +809,18 @@ const E = {
   setRemoval(x) {
     this.removal = x;
     const t = this.ctx.currentTime;
-    this.nodes.dryMid.gain.setTargetAtTime(1 - x, t, .05);
-    this.nodes.wetMid.gain.setTargetAtTime(x, t, .05);
+    if (this.ai && this.bufAlt) {
+      /* AI mode: crossfade original ↔ AI instrumental; mid/side DSP bypassed */
+      this.nodes.dryMid.gain.setTargetAtTime(1, t, .05);
+      this.nodes.wetMid.gain.setTargetAtTime(0, t, .05);
+      this.nodes.srcBus.gain.setTargetAtTime(1 - x, t, .05);
+      this.nodes.altBus.gain.setTargetAtTime(x, t, .05);
+    } else {
+      this.nodes.srcBus.gain.setTargetAtTime(1, t, .05);
+      this.nodes.altBus.gain.setTargetAtTime(0, t, .05);
+      this.nodes.dryMid.gain.setTargetAtTime(1 - x, t, .05);
+      this.nodes.wetMid.gain.setTargetAtTime(x, t, .05);
+    }
   },
   setVolume(v) { this.nodes.master.gain.setTargetAtTime(v, this.ctx.currentTime, .05); },
   setKey(k) { this.key = k; this.applyPitch(); },
@@ -760,6 +828,7 @@ const E = {
     if (this.playing) { this.p0 = this.cur(); this.t0 = this.ctx.currentTime; }
     this.rate = r;
     if (this.src) this.src.playbackRate.value = r;
+    if (this.srcAlt) this.srcAlt.playbackRate.value = r;
     this.applyPitch();
   },
   applyPitch() {
@@ -911,6 +980,7 @@ async function renderLib() {
   box.innerHTML = songs.map(s => {
     const synced = !!parseLrc(s.lyrics);
     const badge = (s.ytId ? '<span class="badge yt">▶ YouTube</span>' : "") +
+      (s.aiBlob ? '<span class="badge ai">✨ AI</span>' : "") +
       (synced ? '<span class="badge sync">🎯 מסונכרן</span>'
               : (s.lyrics ? '<span class="badge plain">📄 מילים</span>' : ""));
     const len = s.duration ? fmt(s.duration) : (s.ytId ? "קליפ" : "0:00");
@@ -947,6 +1017,7 @@ function openEdit(song) {
   $("ed-fmeta").textContent = draft.duration && draft.blob ? "משך: " + fmt(draft.duration) : "";
   $("ed-yturl").value = "";
   renderYtPrev();
+  updateAiCard();
   $("ed-results").innerHTML = "";
   $("ed-del").classList.toggle("hidden", !song);
   updateLyrState();
@@ -959,7 +1030,7 @@ function renderYtPrev(metaTitle) {
   box.innerHTML = '<img src="https://i.ytimg.com/vi/' + esc(draft.ytId) + '/mqdefault.jpg" alt="" />' +
     '<div class="fi"><b>' + esc(metaTitle || "סרטון YouTube") + '</b><span dir="ltr">' + esc(draft.ytId) + "</span></div>" +
     '<button type="button" id="ed-ytclear">הסרה</button>';
-  $("ed-ytclear").addEventListener("click", () => { draft.ytId = null; renderYtPrev(); });
+  $("ed-ytclear").addEventListener("click", () => { draft.ytId = null; renderYtPrev(); updateAiCard(); });
 }
 function updateLyrState() {
   const txt = $("ed-lyr").value.trim();
@@ -979,6 +1050,9 @@ $("ed-file").addEventListener("change", async e => {
   if (!f) return;
   draft.blob = f; draft.fileName = f.name;
   draft.ytId = null; renderYtPrev();
+  /* a new file invalidates a previously rendered AI playback */
+  if (draft.aiBlob) { draft.aiBlob = null; draft.aiAt = null; }
+  updateAiCard();
   $("ed-fname").textContent = f.name;
   /* duration via a throwaway <audio> — no full decode needed at import time */
   const url = URL.createObjectURL(f);
@@ -1003,8 +1077,10 @@ $("ed-ytload").addEventListener("click", async () => {
   if (!id) { toast("זה לא נראה כמו קישור YouTube תקין"); return; }
   draft.ytId = id;
   draft.blob = null; draft.fileName = ""; draft.duration = 0;
+  draft.aiBlob = null; draft.aiAt = null;
   $("ed-fname").textContent = "לא נבחר קובץ"; $("ed-fmeta").textContent = "";
   renderYtPrev();
+  updateAiCard();
   const meta = await ytMeta(id);
   if (meta && draft && draft.ytId === id) {
     renderYtPrev(meta.title);
@@ -1080,6 +1156,85 @@ $("ed-del").addEventListener("click", async () => {
 });
 $("btn-add").addEventListener("click", () => openEdit(null));
 
+/* ---------------- AI playback rendering (Demucs in a worker) ---------------- */
+const AI = { worker: null, songId: null };
+function setAiBar(pct) { $("ai-fill").style.width = Math.max(0, Math.min(100, pct)) + "%"; }
+function finishAI() {
+  if (AI.worker) { try { AI.worker.terminate(); } catch (e) {} AI.worker = null; }
+  AI.songId = null;
+  $("aiov").classList.add("hidden");
+}
+async function runAI(song) {
+  if (AI.worker) { toast("כבר רץ עיבוד — מחכים שיסתיים"); return; }
+  busy("מפענח את קובץ השמע…");
+  let L, R, sr;
+  try {
+    const ab = await song.blob.arrayBuffer();
+    /* decode + resample to the model's 44.1kHz */
+    const oc = new OfflineAudioContext(2, 44100, 44100);
+    const buf = await oc.decodeAudioData(ab);
+    sr = buf.sampleRate;
+    L = buf.getChannelData(0).slice();
+    R = (buf.numberOfChannels > 1 ? buf.getChannelData(1) : buf.getChannelData(0)).slice();
+  } catch (e) { busy(false); toast("פענוח הקובץ נכשל"); return; }
+  busy(false);
+  if (L.length / sr > 720 && !confirm("השיר ארוך מ-12 דקות — העיבוד יהיה ארוך במיוחד. להמשיך?")) return;
+  $("ai-title").textContent = song.title;
+  $("ai-phase").textContent = "מכין את המנוע…";
+  setAiBar(0);
+  $("aiov").classList.remove("hidden");
+  let w;
+  try { w = new Worker("ai/separate-worker.js"); }
+  catch (e) { finishAI(); toast("הדפדפן לא הצליח להריץ את מנוע ה-AI"); return; }
+  AI.worker = w; AI.songId = song.id;
+  w.onerror = ev => { finishAI(); toast("שגיאה בעיבוד: " + (ev.message || "worker error")); };
+  w.onmessage = async ev => {
+    const m = ev.data;
+    if (m.type === "download") {
+      $("ai-phase").textContent = "מוריד את מודל ה-AI (חד-פעמי): ‎" +
+        Math.round(m.loaded / 1048576) + " / " + Math.round(m.total / 1048576) + " MB";
+      setAiBar(m.loaded / m.total * 100);
+    } else if (m.type === "progress") {
+      $("ai-phase").textContent = "מפריד את השירה מהמוזיקה — קטע " + m.done + " מתוך " + m.total;
+      setAiBar(m.total ? m.done / m.total * 100 : 0);
+    } else if (m.type === "error") {
+      finishAI();
+      toast("העיבוד נכשל: " + m.message);
+    } else if (m.type === "done") {
+      const blob = new Blob([m.wav], { type: "audio/wav" });
+      song.aiBlob = blob; song.aiAt = Date.now();
+      try { await dbPut(song); } catch (e) { finishAI(); toast("שמירת הפלייבק נכשלה: " + e); return; }
+      finishAI();
+      if (draft && draft.id === song.id) { draft.aiBlob = blob; draft.aiAt = song.aiAt; updateAiCard(); }
+      renderLib();
+      toast("✨ הפלייבק המקצועי מוכן! (מנוע: " + (m.backend === "webgpu" ? "GPU" : "CPU") + ")");
+    }
+  };
+  const payload = { cmd: "separate", channelData: [L, R], sampleRate: sr };
+  w.postMessage(payload, [L.buffer, R.buffer]);
+}
+$("ai-cancel").addEventListener("click", () => { finishAI(); toast("העיבוד בוטל"); });
+function updateAiCard() {
+  const card = $("ed-aicard");
+  if (!draft || draft.ytId || !draft.blob) { card.classList.add("hidden"); return; }
+  card.classList.remove("hidden");
+  $("ed-aistate").textContent = draft.aiBlob
+    ? "✅ קיים פלייבק AI לשיר הזה — בבמה, סליידר \"הסרת שירה\" עובד עליו."
+    : "";
+  $("ed-airun").textContent = draft.aiBlob ? "✨ יצירת הפלייבק מחדש" : "✨ יצירת פלייבק AI";
+}
+$("ed-airun").addEventListener("click", async () => {
+  if (!draft || !draft.blob) { toast("קודם בוחרים קובץ שמע"); return; }
+  const title = $("ed-title").value.trim();
+  if (!title) { toast("חסר שם לשיר — ממלאים ואז יוצרים"); return; }
+  /* the song is saved first so a long render can't be lost */
+  draft.title = title;
+  draft.artist = $("ed-artist").value.trim();
+  draft.lyrics = $("ed-lyr").value.trim();
+  try { await dbPut(draft); } catch (e) { toast("השמירה נכשלה: " + e); return; }
+  runAI(draft);
+});
+
 /* ---------------- Tap-sync (manual lyric timing) ---------------- */
 const SY = { lines: [], stamps: [], audio: null, url: null };
 $("ed-sync").addEventListener("click", () => {
@@ -1152,7 +1307,14 @@ async function openStage(song) {
   busy(isYt ? "טוען את נגן YouTube…" : "טוען ומעבד את השיר…");
   try {
     if (isYt) await YTP.open(song.ytId);
-    else await E.load(song.blob);
+    else {
+      E.ai = false; E.bufAlt = null;
+      await E.load(song.blob);
+      if (song.aiBlob) {
+        try { E.bufAlt = await E.decodeBlob(song.aiBlob); E.ai = true; }
+        catch (err) { E.bufAlt = null; E.ai = false; }
+      }
+    }
   } catch (e) {
     busy(false);
     $("stage").classList.add("hidden");
@@ -1178,6 +1340,7 @@ async function openStage(song) {
   if (isYt) {
     remRow.classList.add("hidden");
     $("mx-mononote").classList.add("hidden");
+    $("mx-ainote").classList.add("hidden");
     keyRow.classList.add("hidden");
     tempoRow.classList.remove("hidden");
     $("mx-tabsec").classList.toggle("hidden",
@@ -1187,14 +1350,15 @@ async function openStage(song) {
   } else {
     $("mx-tabsec").classList.add("hidden");
     remRow.classList.remove("hidden");
-    const removal = E.mono ? 0 : (s.removal != null ? s.removal : 1);
+    const removal = (E.mono && !E.ai) ? 0 : (s.removal != null ? s.removal : 1);
     E.setRemoval(removal);
     E.setKey(s.key || 0);
     E.setRate(rate);
     E.setVolume(vol / 100);
     $("mx-rem").value = Math.round(removal * 100); $("mx-rem-v").textContent = Math.round(removal * 100) + "%";
-    $("mx-rem").disabled = E.mono;
-    $("mx-mononote").classList.toggle("hidden", !E.mono);
+    $("mx-rem").disabled = E.mono && !E.ai;
+    $("mx-mononote").classList.toggle("hidden", !(E.mono && !E.ai));
+    $("mx-ainote").classList.toggle("hidden", !E.ai);
     $("mx-key-v").textContent = (E.key > 0 ? "+" : "") + E.key;
     keyRow.classList.toggle("hidden", !E.workletOk);
     tempoRow.classList.toggle("hidden", !E.workletOk);
