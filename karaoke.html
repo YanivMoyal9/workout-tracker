@@ -91,6 +91,20 @@ try { if (!localStorage.getItem("sb-xgorkdbiptrhdykplodn-auth-token")) location.
   .lyr-res b{font-size:13.5px;display:block}
   .lyr-res span{font-size:11.5px;color:var(--muted)}
   .lyr-res:active{background:rgba(47,122,61,.06)}
+  .or-div{display:flex;align-items:center;gap:10px;color:var(--faint);font-size:11.5px;font-weight:800;margin:14px 0 6px}
+  .or-div::before,.or-div::after{content:"";flex:1;height:1px;background:rgba(0,0,0,.1)}
+  .ytbox{display:flex;gap:8px;margin:8px 0}
+  .ytbox input{flex:1;min-width:0;padding:11px 12px;border-radius:10px;border:1px solid #D5D3CE;background:#fff;
+    color:var(--ink);font-size:13px;direction:ltr;text-align:left}
+  .ytbox button{padding:9px 16px;border-radius:10px;background:var(--red);color:#fff;font-size:12.5px;font-weight:800;flex:none}
+  .ytbox button:active{transform:scale(.96)}
+  #ed-ytprev{display:flex;align-items:center;gap:12px;background:rgba(198,75,60,.07);border-radius:14px;padding:10px 12px;margin:8px 0}
+  #ed-ytprev img{width:86px;border-radius:8px;display:block;background:#000}
+  #ed-ytprev .fi{flex:1;min-width:0}
+  #ed-ytprev .fi b{font-size:13px;display:block;line-height:1.45}
+  #ed-ytprev .fi span{font-size:11px;color:var(--muted)}
+  #ed-ytprev button{padding:8px 12px;border-radius:10px;background:rgba(0,0,0,.08);font-size:12px;font-weight:800;flex:none}
+  .badge.yt{background:rgba(198,75,60,.12);color:var(--red)}
 
   /* ===== Stage (performance mode) ===== */
   #stage{position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;color:#F0F0F2;
@@ -124,6 +138,12 @@ try { if (!localStorage.getItem("sb-xgorkdbiptrhdykplodn-auth-token")) location.
   .ly-end{font-size:38px;text-align:center;margin:20px 0}
 
   #st-viz{display:block;width:100%;height:44px;position:relative;z-index:1;opacity:.85}
+
+  /* embedded YouTube player on stage */
+  #st-yt{position:relative;z-index:1;padding:6px 14px 0}
+  #st-yt .ytwrap{position:relative;max-width:min(100%,58vh);margin:0 auto;aspect-ratio:16/9;
+    border-radius:14px;overflow:hidden;background:#000;box-shadow:0 10px 34px rgba(0,0,0,.55)}
+  #st-yt .ytwrap iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
 
   .st-ctrl{position:relative;z-index:2;padding:6px 16px calc(14px + env(safe-area-inset-bottom));
     background:rgba(13,12,18,.72);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
@@ -217,7 +237,7 @@ try { if (!localStorage.getItem("sb-xgorkdbiptrhdykplodn-auth-token")) location.
     </div>
 
     <div class="card">
-      <div class="sec-t" style="margin-top:0">🎵 קובץ השיר</div>
+      <div class="sec-t" style="margin-top:0">🎵 מקור השיר</div>
       <div class="filebox">
         <div class="em">🎵</div>
         <div class="fi"><b id="ed-fname">לא נבחר קובץ</b><span id="ed-fmeta"></span></div>
@@ -225,6 +245,15 @@ try { if (!localStorage.getItem("sb-xgorkdbiptrhdykplodn-auth-token")) location.
       </div>
       <p class="note">הפרדת השירה עובדת הכי טוב על קובצי סטריאו מקוריים (MP3 / M4A / WAV / FLAC).
       אם יש לך גרסת פלייבק מוכנה — אפשר לטעון אותה ולכבות את הסרת השירה.</p>
+
+      <div class="or-div">או קליפ מ-YouTube</div>
+      <div class="ytbox">
+        <input id="ed-yturl" type="url" inputmode="url" placeholder="https://www.youtube.com/watch?v=…" />
+        <button id="ed-ytload">טעינה</button>
+      </div>
+      <div id="ed-ytprev" class="hidden"></div>
+      <p class="note">הקליפ מתנגן דרך נגן YouTube הרשמי בתוך האפליקציה, עם המילים מסונכרנות מעליו.
+      הסרת שירה ושינוי טון לא זמינים על YouTube — טיפ: מחפשים ביוטיוב גרסת "קריוקי" או "פלייבק" של השיר, קיימת כמעט לכל שיר.</p>
 
       <label class="field"><span>שם השיר</span><input id="ed-title" type="text" /></label>
       <label class="field"><span>אמן/ית</span><input id="ed-artist" type="text" /></label>
@@ -261,6 +290,7 @@ try { if (!localStorage.getItem("sb-xgorkdbiptrhdykplodn-auth-token")) location.
     <button class="tbtn" id="st-mixbtn" aria-label="מיקסר">🎚️</button>
   </div>
 
+  <div id="st-yt" class="hidden"><div class="ytwrap"><div id="st-ytp"></div></div></div>
   <div id="st-lyr"></div>
   <canvas id="st-viz"></canvas>
 
@@ -461,6 +491,96 @@ async function lrclibSearch(title, artist) {
   return await r.json();
 }
 
+/* ================= YouTube embedded player =================
+   The clip plays through the official IFrame player (views/ads reach the
+   creator); we sync lyrics to its clock. The stream's audio is not
+   accessible, so vocal removal / key shift apply to local files only. */
+function ytIdFromUrl(u) {
+  u = String(u || "").trim();
+  const m = u.match(/(?:youtube\.com\/(?:watch\?[^#\s]*v=|shorts\/|embed\/|live\/)|youtu\.be\/)([\w-]{11})/);
+  if (m) return m[1];
+  return /^[\w-]{11}$/.test(u) ? u : null;
+}
+async function ytMeta(id) {
+  const watch = "https://www.youtube.com/watch?v=" + id;
+  for (const ep of ["https://www.youtube.com/oembed?format=json&url=",
+                    "https://noembed.com/embed?url="]) {
+    try {
+      const r = await fetch(ep + encodeURIComponent(watch));
+      if (r.ok) { const j = await r.json(); if (j && j.title) return j; }
+    } catch (e) {}
+  }
+  return null;
+}
+let _ytApiP = null;
+function ytApi() {
+  if (window.YT && window.YT.Player) return Promise.resolve();
+  if (_ytApiP) return _ytApiP;
+  _ytApiP = new Promise((res, rej) => {
+    const prev = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => { if (prev) { try { prev(); } catch (e) {} } res(); };
+    const s = document.createElement("script");
+    s.src = "https://www.youtube.com/iframe_api";
+    s.onerror = () => rej(new Error("iframe_api load failed"));
+    document.head.appendChild(s);
+    setTimeout(() => rej(new Error("iframe_api timeout")), 15000);
+  });
+  _ytApiP.catch(() => { _ytApiP = null; });
+  return _ytApiP;
+}
+const YTP = {
+  p: null, ready: false, playing: false, dur: 0,
+  async open(videoId) {
+    await ytApi();
+    this.destroy();
+    return new Promise((res, rej) => {
+      const to = setTimeout(() => rej(new Error("player timeout")), 20000);
+      this.p = new YT.Player("st-ytp", {
+        videoId,
+        host: "https://www.youtube-nocookie.com",
+        playerVars: { playsinline: 1, rel: 0, controls: 0, disablekb: 1 },
+        events: {
+          onReady: e => { clearTimeout(to); this.ready = true; this.dur = e.target.getDuration() || 0; res(); },
+          onError: () => { clearTimeout(to); rej(new Error("embed blocked")); },
+          onStateChange: e => {
+            this.playing = e.data === YT.PlayerState.PLAYING;
+            if (this.ready && this.p) { try { this.dur = this.p.getDuration() || this.dur; } catch (err) {} }
+            updatePlayBtn();
+          },
+          onPlaybackRateChange: e => {
+            /* YouTube snaps to its supported rates — reflect the real one */
+            const v = Math.round(e.data * 100);
+            $("mx-tempo").value = v; $("mx-tempo-v").textContent = v + "%";
+          }
+        }
+      });
+    });
+  },
+  destroy() {
+    if (this.p) { try { this.p.destroy(); } catch (e) {} }
+    this.p = null; this.ready = false; this.playing = false; this.dur = 0;
+    const wrap = document.querySelector("#st-yt .ytwrap");
+    if (wrap) wrap.innerHTML = '<div id="st-ytp"></div>';
+  },
+  cur() { try { return this.ready && this.p ? (this.p.getCurrentTime() || 0) : 0; } catch (e) { return 0; } },
+  play() { try { if (this.p) this.p.playVideo(); } catch (e) {} },
+  pause() { try { if (this.p) this.p.pauseVideo(); } catch (e) {} },
+  seek(t) { try { if (this.p) this.p.seekTo(Math.max(0, t), true); } catch (e) {} },
+  setRate(r) { try { if (this.p) this.p.setPlaybackRate(r); } catch (e) {} },
+  setVol(v) { try { if (this.p) this.p.setVolume(Math.round(Math.min(100, v * 100))); } catch (e) {} }
+};
+
+/* unified transport over the file engine / YouTube player */
+const P = {
+  mode: "file",
+  playing() { return this.mode === "yt" ? YTP.playing : E.playing; },
+  dur() { return this.mode === "yt" ? YTP.dur : E.dur; },
+  cur() { return this.mode === "yt" ? YTP.cur() : E.cur(); },
+  async play() { if (this.mode === "yt") YTP.play(); else await E.play(); },
+  pause() { if (this.mode === "yt") YTP.pause(); else E.pause(); },
+  seek(t) { if (this.mode === "yt") YTP.seek(t); else E.seek(t); }
+};
+
 /* ================= Audio engine =================
    source → [mid/side vocal removal] → pitch-shift worklet → master
    Mid/side: vocals sit in the centre (mid); we cut the mid's vocal band
@@ -642,6 +762,7 @@ const E = {
   /* ---- live microphone with echo + reverb ---- */
   async micStart() {
     if (this.micOn) return;
+    await this.ensure();      /* mic works in YouTube mode too, before any file loads */
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
     });
@@ -729,18 +850,20 @@ async function renderLib() {
   const box = $("lib-list");
   if (!songs.length) {
     box.innerHTML = '<div class="card empty"><span class="big">🎶</span>' +
-      'עדיין אין שירים בספרייה.<br>מוסיפים קובץ שיר — והמערכת הופכת אותו לפלייבק קריוקי:' +
-      '<br>הסרת שירה, מילים מסונכרנות על המסך, שינוי טון ומיקרופון חי.</div>';
+      'עדיין אין שירים בספרייה.<br>מוסיפים קובץ שיר או קישור YouTube — והמערכת הופכת אותו לקריוקי:' +
+      '<br>מילים מסונכרנות על המסך, הסרת שירה (בקבצים), שינוי טון ומיקרופון חי.</div>';
     return;
   }
   box.innerHTML = songs.map(s => {
     const synced = !!parseLrc(s.lyrics);
-    const badge = synced ? '<span class="badge sync">🎯 מסונכרן</span>'
-      : (s.lyrics ? '<span class="badge plain">📄 מילים</span>' : "");
+    const badge = (s.ytId ? '<span class="badge yt">▶ YouTube</span>' : "") +
+      (synced ? '<span class="badge sync">🎯 מסונכרן</span>'
+              : (s.lyrics ? '<span class="badge plain">📄 מילים</span>' : ""));
+    const len = s.duration ? fmt(s.duration) : (s.ytId ? "קליפ" : "0:00");
     return '<div class="song" data-id="' + esc(s.id) + '">' +
       '<button class="play" data-act="play">▶</button>' +
       '<div class="info" data-act="play"><b>' + esc(s.title) + badge + "</b>" +
-      '<span>' + esc(s.artist || "לא ידוע") + " · " + fmt(s.duration) + "</span></div>" +
+      '<span>' + esc(s.artist || "לא ידוע") + " · " + len + "</span></div>" +
       '<button class="edit" data-act="edit">✏️</button></div>';
   }).join("");
 }
@@ -767,12 +890,22 @@ function openEdit(song) {
   $("ed-artist").value = draft.artist || "";
   $("ed-lyr").value = draft.lyrics || "";
   $("ed-fname").textContent = draft.fileName || "לא נבחר קובץ";
-  $("ed-fmeta").textContent = draft.duration ? "משך: " + fmt(draft.duration) : "";
+  $("ed-fmeta").textContent = draft.duration && draft.blob ? "משך: " + fmt(draft.duration) : "";
+  $("ed-yturl").value = "";
+  renderYtPrev();
   $("ed-results").innerHTML = "";
   $("ed-del").classList.toggle("hidden", !song);
   updateLyrState();
   showScreen("edit");
-  if (!song) $("ed-file").click();
+}
+function renderYtPrev(metaTitle) {
+  const box = $("ed-ytprev");
+  if (!draft || !draft.ytId) { box.innerHTML = ""; box.classList.add("hidden"); return; }
+  box.classList.remove("hidden");
+  box.innerHTML = '<img src="https://i.ytimg.com/vi/' + esc(draft.ytId) + '/mqdefault.jpg" alt="" />' +
+    '<div class="fi"><b>' + esc(metaTitle || "סרטון YouTube") + '</b><span dir="ltr">' + esc(draft.ytId) + "</span></div>" +
+    '<button type="button" id="ed-ytclear">הסרה</button>';
+  $("ed-ytclear").addEventListener("click", () => { draft.ytId = null; renderYtPrev(); });
 }
 function updateLyrState() {
   const txt = $("ed-lyr").value.trim();
@@ -791,6 +924,7 @@ $("ed-file").addEventListener("change", async e => {
   e.target.value = "";
   if (!f) return;
   draft.blob = f; draft.fileName = f.name;
+  draft.ytId = null; renderYtPrev();
   $("ed-fname").textContent = f.name;
   /* duration via a throwaway <audio> — no full decode needed at import time */
   const url = URL.createObjectURL(f);
@@ -808,6 +942,31 @@ $("ed-file").addEventListener("change", async e => {
     const m = base.match(/^(.+?)\s*-\s*(.+)$/);
     if (m) { $("ed-artist").value = m[1].trim(); $("ed-title").value = m[2].trim(); }
     else $("ed-title").value = base;
+  }
+});
+$("ed-ytload").addEventListener("click", async () => {
+  const id = ytIdFromUrl($("ed-yturl").value);
+  if (!id) { toast("זה לא נראה כמו קישור YouTube תקין"); return; }
+  draft.ytId = id;
+  draft.blob = null; draft.fileName = ""; draft.duration = 0;
+  $("ed-fname").textContent = "לא נבחר קובץ"; $("ed-fmeta").textContent = "";
+  renderYtPrev();
+  const meta = await ytMeta(id);
+  if (meta && draft && draft.ytId === id) {
+    renderYtPrev(meta.title);
+    /* strip "(Official Video)"-style suffixes, then try "Artist - Title" */
+    const clean = String(meta.title)
+      .replace(/[(\[][^)\]]*(official|video|audio|lyric|hd|4k|קליפ|רשמי|מילים)[^)\]]*[)\]]/gi, "").trim();
+    if (!$("ed-title").value) {
+      const m = clean.match(/^(.+?)\s*[-–|]\s*(.+)$/);
+      if (m) { $("ed-artist").value = m[1].trim(); $("ed-title").value = m[2].trim(); }
+      else $("ed-title").value = clean || meta.title;
+    }
+    if (!$("ed-artist").value && meta.author_name)
+      $("ed-artist").value = String(meta.author_name).replace(/\s*-\s*Topic$/i, "");
+    toast("פרטי הסרטון נטענו — עכשיו 🔎 לחיפוש מילים מסונכרנות");
+  } else if (draft && draft.ytId === id) {
+    toast("הסרטון נטען — ממלאים שם ואמן ידנית ואז 🔎");
   }
 });
 $("ed-lrcfile").addEventListener("click", () => $("ed-lrcinput").click());
@@ -845,7 +1004,7 @@ $("ed-fetch").addEventListener("click", async () => {
   }));
 });
 $("ed-save").addEventListener("click", async () => {
-  if (!draft.blob) { toast("חסר קובץ שמע — בוחרים קובץ שיר"); return; }
+  if (!draft.blob && !draft.ytId) { toast("בוחרים קובץ שמע או קישור YouTube"); return; }
   const title = $("ed-title").value.trim();
   if (!title) { toast("חסר שם לשיר"); return; }
   draft.title = title;
@@ -870,7 +1029,10 @@ $("btn-add").addEventListener("click", () => openEdit(null));
 /* ---------------- Tap-sync (manual lyric timing) ---------------- */
 const SY = { lines: [], stamps: [], audio: null, url: null };
 $("ed-sync").addEventListener("click", () => {
-  if (!draft || !draft.blob) { toast("קודם בוחרים קובץ שמע"); return; }
+  if (!draft || !draft.blob) {
+    toast(draft && draft.ytId ? "סנכרון ידני בהקשות זמין רק לשירים מקובץ — ל-YouTube מחפשים מילים עם 🔎" : "קודם בוחרים קובץ שמע");
+    return;
+  }
   const raw = $("ed-lyr").value;
   const parsed = parseLrc(raw);
   const lines = parsed ? parsed.map(l => l.text)
@@ -926,43 +1088,66 @@ $("sy-done").addEventListener("click", () => {
 const ST = { song: null, lines: null, lineEls: [], activeIdx: -1, raf: 0, recOn: false, wake: null };
 
 async function openStage(song) {
-  busy("טוען ומעבד את השיר…");
+  const isYt = !!song.ytId;
+  P.mode = isYt ? "yt" : "file";
+  $("stage").classList.remove("hidden");
+  $("st-yt").classList.toggle("hidden", !isYt);
+  $("st-viz").classList.toggle("hidden", isYt);
+  $("st-rec").classList.toggle("hidden", isYt);
+  busy(isYt ? "טוען את נגן YouTube…" : "טוען ומעבד את השיר…");
   try {
-    await E.load(song.blob);
+    if (isYt) await YTP.open(song.ytId);
+    else await E.load(song.blob);
   } catch (e) {
     busy(false);
-    toast("לא הצלחתי לפענח את קובץ השמע");
+    $("stage").classList.add("hidden");
+    toast(isYt ? "הסרטון לא נטען — ייתכן שבעל הזכויות חסם הטמעה, נסו קליפ אחר"
+               : "לא הצלחתי לפענח את קובץ השמע");
     return;
   }
   busy(false);
   ST.song = song;
   song.lastPlayed = Date.now();
+  if (isYt && YTP.dur && Math.abs((song.duration || 0) - YTP.dur) > 1) song.duration = YTP.dur;
   dbPut(song).catch(() => {});
   $("st-t1").textContent = song.title;
   $("st-t2").textContent = song.artist || "";
-  $("st-dur").textContent = fmt(E.dur);
-  /* per-song settings */
+  $("st-dur").textContent = fmt(P.dur());
+  /* per-song settings + mode-specific mixer rows */
   const s = song.settings || {};
-  const removal = E.mono ? 0 : (s.removal != null ? s.removal : 1);
-  E.setRemoval(removal);
-  E.setKey(s.key || 0);
-  E.setRate(s.rate || 1);
-  E.setVolume((s.vol != null ? s.vol : 95) / 100);
-  $("mx-rem").value = Math.round(removal * 100); $("mx-rem-v").textContent = Math.round(removal * 100) + "%";
-  $("mx-rem").disabled = E.mono;
-  $("mx-mononote").classList.toggle("hidden", !E.mono);
-  $("mx-key-v").textContent = (E.key > 0 ? "+" : "") + E.key;
-  $("mx-tempo").value = Math.round(E.rate * 100); $("mx-tempo-v").textContent = Math.round(E.rate * 100) + "%";
-  $("mx-vol").value = s.vol != null ? s.vol : 95; $("mx-vol-v").textContent = (s.vol != null ? s.vol : 95) + "%";
-  const keyRow = $("mx-key-v").closest(".mx-row"), tempoRow = $("mx-tempo").closest(".mx-row");
-  keyRow.classList.toggle("hidden", !E.workletOk);
-  tempoRow.classList.toggle("hidden", !E.workletOk);
+  const vol = s.vol != null ? s.vol : 95;
+  const rate = s.rate || 1;
+  const remRow = $("mx-rem").closest(".mx-row");
+  const keyRow = $("mx-key-v").closest(".mx-row");
+  const tempoRow = $("mx-tempo").closest(".mx-row");
+  if (isYt) {
+    remRow.classList.add("hidden");
+    $("mx-mononote").classList.add("hidden");
+    keyRow.classList.add("hidden");
+    tempoRow.classList.remove("hidden");
+    YTP.setRate(rate);
+    YTP.setVol(vol / 100);
+  } else {
+    remRow.classList.remove("hidden");
+    const removal = E.mono ? 0 : (s.removal != null ? s.removal : 1);
+    E.setRemoval(removal);
+    E.setKey(s.key || 0);
+    E.setRate(rate);
+    E.setVolume(vol / 100);
+    $("mx-rem").value = Math.round(removal * 100); $("mx-rem-v").textContent = Math.round(removal * 100) + "%";
+    $("mx-rem").disabled = E.mono;
+    $("mx-mononote").classList.toggle("hidden", !E.mono);
+    $("mx-key-v").textContent = (E.key > 0 ? "+" : "") + E.key;
+    keyRow.classList.toggle("hidden", !E.workletOk);
+    tempoRow.classList.toggle("hidden", !E.workletOk);
+    E.onend = () => { updatePlayBtn(); };
+  }
+  $("mx-tempo").value = Math.round(rate * 100); $("mx-tempo-v").textContent = Math.round(rate * 100) + "%";
+  $("mx-vol").value = vol; $("mx-vol-v").textContent = vol + "%";
   buildLyrics(song);
   $("st-mix").classList.add("hidden");
-  $("stage").classList.remove("hidden");
-  E.onend = () => { updatePlayBtn(); };
   wakeLock(true);
-  E.play().then(updatePlayBtn);
+  P.play().then(updatePlayBtn).catch(() => {});
   cancelAnimationFrame(ST.raf);
   stTick();
 }
@@ -992,10 +1177,11 @@ function buildLyrics(song) {
 
 function stTick() {
   ST.raf = requestAnimationFrame(stTick);
-  const pos = E.cur();
+  const pos = P.cur(), dur = P.dur();
   $("st-cur").textContent = fmt(pos);
+  if (dur) $("st-dur").textContent = fmt(dur);
   const seek = $("st-seek");
-  if (!seek.matches(":active") && E.dur) seek.value = Math.round(pos / E.dur * 1000);
+  if (!seek.matches(":active") && dur) seek.value = Math.round(pos / dur * 1000);
   drawViz();
   if (!ST.lines) return;
   /* current line = last line whose start ≤ pos */
@@ -1028,6 +1214,7 @@ function stTick() {
 }
 
 function drawViz() {
+  if (P.mode === "yt") return;
   const cv = $("st-viz");
   if (!E.ctx || !E.nodes.an) return;
   const W = cv.clientWidth, H = cv.clientHeight;
@@ -1047,7 +1234,7 @@ function drawViz() {
   }
 }
 
-function updatePlayBtn() { $("st-play").textContent = E.playing ? "⏸" : "▶"; }
+function updatePlayBtn() { $("st-play").textContent = P.playing() ? "⏸" : "▶"; }
 
 async function wakeLock(on) {
   try {
@@ -1060,29 +1247,33 @@ document.addEventListener("visibilitychange", () => {
 });
 
 $("st-play").addEventListener("click", async () => {
-  if (E.playing) E.pause(); else await E.play();
+  if (P.playing()) P.pause(); else await P.play();
   updatePlayBtn();
 });
-$("st-back10").addEventListener("click", () => { E.seek(E.cur() - 10); });
-$("st-fwd10").addEventListener("click", () => { E.seek(E.cur() + 10); });
-$("st-seek").addEventListener("change", e => { E.seek(+e.target.value / 1000 * E.dur); });
+$("st-back10").addEventListener("click", () => { P.seek(P.cur() - 10); });
+$("st-fwd10").addEventListener("click", () => { P.seek(P.cur() + 10); });
+$("st-seek").addEventListener("change", e => { P.seek(+e.target.value / 1000 * P.dur()); });
 $("st-mixbtn").addEventListener("click", () => $("st-mix").classList.toggle("hidden"));
 
 $("st-close").addEventListener("click", () => {
-  E.pause();
+  P.pause();
   if (ST.recOn) stopRecording();
   if (E.micOn) micToggle(false);
   wakeLock(false);
   cancelAnimationFrame(ST.raf);
   /* persist per-song mixer settings */
   if (ST.song) {
+    const prev = ST.song.settings || {};
     ST.song.settings = {
-      removal: E.mono ? (ST.song.settings ? ST.song.settings.removal : 1) : E.removal,
-      key: E.key, rate: E.rate, vol: +$("mx-vol").value
+      removal: P.mode === "file" && !E.mono ? E.removal : (prev.removal != null ? prev.removal : 1),
+      key: P.mode === "file" ? E.key : (prev.key || 0),
+      rate: +$("mx-tempo").value / 100,
+      vol: +$("mx-vol").value
     };
     dbPut(ST.song).catch(() => {});
   }
   ST.song = null;
+  if (P.mode === "yt") YTP.destroy();
   $("stage").classList.add("hidden");
   renderLib();
 });
@@ -1102,12 +1293,12 @@ function setKeyUI(k) {
 $("mx-tempo").addEventListener("input", e => {
   const v = +e.target.value;
   $("mx-tempo-v").textContent = v + "%";
-  E.setRate(v / 100);
+  if (P.mode === "yt") YTP.setRate(v / 100); else E.setRate(v / 100);
 });
 $("mx-vol").addEventListener("input", e => {
   const v = +e.target.value;
   $("mx-vol-v").textContent = v + "%";
-  E.setVolume(v / 100);
+  if (P.mode === "yt") YTP.setVol(v / 100); else E.setVolume(v / 100);
 });
 
 /* microphone */
