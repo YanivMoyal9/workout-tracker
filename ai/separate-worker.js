@@ -654,19 +654,36 @@ if (typeof importScripts === "function") {
         backend = "wasm";
         model = await ONNXHTDemucs.init(ort, weights, ["wasm"]);
       }
+      /* normalize like the official demucs CLI (separate.py): zero-mean,
+         unit-std of the mono reference — the model expects this range */
+      const chs = msg.channelData;
+      const nSamp = chs[0].length;
+      let mean = 0;
+      for (let i = 0; i < nSamp; i++) mean += (chs[0][i] + chs[1][i]) / 2;
+      mean /= nSamp;
+      let vs = 0;
+      for (let i = 0; i < nSamp; i++) {
+        const m = (chs[0][i] + chs[1][i]) / 2 - mean;
+        vs += m * m;
+      }
+      const std = Math.sqrt(vs / nSamp) + 1e-8;
+      for (const ch of chs)
+        for (let i = 0; i < ch.length; i++) ch[i] = (ch[i] - mean) / std;
+
       const stems = await separateTracks(
         model,
-        { channelData: msg.channelData, sampleRate: msg.sampleRate },
+        { channelData: chs, sampleRate: msg.sampleRate },
         (done, total) => postMessage({ type: "progress", done, total })
       );
-      /* instrumental = mix - vocals: keeps every non-vocal detail intact */
-      const nCh = msg.channelData.length;
+      /* instrumental = mix - vocals (means cancel in the difference), scaled
+         back to the original level; keeps every non-vocal detail intact */
+      const nCh = chs.length;
       const inst = [];
       for (let c = 0; c < nCh; c++) {
-        const mixCh = msg.channelData[c];
+        const mixCh = chs[c];
         const vocCh = stems.vocals.channelData[c];
         const out = new Float32Array(mixCh.length);
-        for (let i = 0; i < mixCh.length; i++) out[i] = mixCh[i] - vocCh[i];
+        for (let i = 0; i < mixCh.length; i++) out[i] = (mixCh[i] - vocCh[i]) * std;
         inst.push(out);
       }
       const wav = samplesToWav(inst, msg.sampleRate);
