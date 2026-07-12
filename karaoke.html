@@ -736,8 +736,11 @@ const E = {
       tail.connect(n.pitch); tail = n.pitch;
     }
     n.master = ctx.createGain(); n.master.gain.value = .95;
+    /* transparent safety limiter — catches peaks only, never squashes the mix
+       (a -12dB/4:1 compressor here audibly "over-processed" all playback) */
     n.comp = ctx.createDynamicsCompressor();
-    n.comp.threshold.value = -12; n.comp.ratio.value = 4;
+    n.comp.threshold.value = -2; n.comp.knee.value = 1; n.comp.ratio.value = 20;
+    n.comp.attack.value = 0.001; n.comp.release.value = 0.12;
     n.an = ctx.createAnalyser(); n.an.fftSize = 256; n.an.smoothingTimeConstant = .8;
     tail.connect(n.master); n.master.connect(n.comp); n.comp.connect(n.an);
     n.an.connect(ctx.destination);
