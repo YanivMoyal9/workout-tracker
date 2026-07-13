@@ -1190,9 +1190,9 @@ const AI = { worker: null, songId: null, quality: null };
 /* quality tiers — the demucs "shift trick" (averaged time-shifted runs) plus
    denser chunk overlap; fast is bit-identical to the original pipeline */
 const AI_TIERS = {
-  fast:    { shifts: 0, overlap: 0.25, label: "מהיר",    note: "ריצה אחת — הכי מהיר, איכות מלאה של המודל" },
-  quality: { shifts: 2, overlap: 0.25, label: "איכותי",  note: "מיצוע 2 ריצות מוסטות-זמן — פחות ארטיפקטים (זמן כפול)" },
-  max:     { shifts: 4, overlap: 0.5,  label: "מקסימלי", note: "מיצוע 4 ריצות + חפיפה כפולה — הכי נקי (פי ~6 זמן, מומלץ עם GPU)" }
+  fast:    { shifts: 0, overlap: 0.25, ensemble: false, label: "מהיר",    note: "ריצה אחת של Demucs — הכי מהיר" },
+  quality: { shifts: 2, overlap: 0.25, ensemble: false, label: "איכותי",  note: "מיצוע 2 ריצות מוסטות-זמן — פחות ארטיפקטים (זמן כפול)" },
+  max:     { shifts: 2, overlap: 0.5,  ensemble: true,  label: "מקסימלי", note: "אנסמבל שני מנועים: Demucs + MDX‏ (UVR) בהצלבה — הסרת השירה הנקייה ביותר. בפעם הראשונה יורד מודל נוסף (~60MB); מומלץ במחשב" }
 };
 /* device heuristic: a real WebGPU adapter on a non-mobile machine → default
    to "quality"; phones and CPU-only machines default to "fast" */
@@ -1290,12 +1290,16 @@ async function runAI(song) {
   w.onmessage = async ev => {
     const m = ev.data;
     if (m.type === "download") {
-      $("ai-phase").textContent = "מוריד את מודל ה-AI (חד-פעמי): ‎" +
+      $("ai-phase").textContent = (m.what === "mdx" ? "מוריד את מודל האנסמבל (חד-פעמי): ‎" : "מוריד את מודל ה-AI (חד-פעמי): ‎") +
         Math.round(m.loaded / 1048576) + " / " + Math.round(m.total / 1048576) + " MB";
       setAiBar(m.loaded / m.total * 100);
     } else if (m.type === "progress") {
-      $("ai-phase").textContent = "מפריד את השירה מהמוזיקה — קטע " + m.done + " מתוך " + m.total;
+      const label = m.phase === "mdx" ? "מנוע 2/2 (MDX) — קטע "
+        : (m.phase === "demucs" ? "מנוע 1/2 (Demucs) — קטע " : "מפריד את השירה מהמוזיקה — קטע ");
+      $("ai-phase").textContent = label + m.done + " מתוך " + m.total;
       setAiBar(m.total ? m.done / m.total * 100 : 0);
+    } else if (m.type === "notice") {
+      toast("מנוע האנסמבל לא היה זמין — הפלייבק נוצר עם Demucs בלבד");
     } else if (m.type === "error") {
       finishAI();
       toast("העיבוד נכשל: " + m.message);
@@ -1312,7 +1316,7 @@ async function runAI(song) {
   };
   const tier = AI_TIERS[AI.quality] || AI_TIERS.fast;
   const payload = { cmd: "separate", channelData: [L, R], sampleRate: sr,
-                    shifts: tier.shifts, overlap: tier.overlap };
+                    shifts: tier.shifts, overlap: tier.overlap, ensemble: !!tier.ensemble };
   w.postMessage(payload, [L.buffer, R.buffer]);
 }
 $("ai-cancel").addEventListener("click", () => { finishAI(); toast("העיבוד בוטל"); });

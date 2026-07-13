@@ -56,11 +56,50 @@ function fft(realInput, imagInput = null) {
   }
   return { real, imag };
 }
+/* radix-3 decimation over the power-of-2 FFT: n = 3·2^m (MDX uses n_fft=6144) */
+function fftRadix3(realInput, imagInput) {
+  const n = realInput.length, m = n / 3;
+  const r0 = new Float32Array(m), i0 = new Float32Array(m);
+  const r1 = new Float32Array(m), i1 = new Float32Array(m);
+  const r2 = new Float32Array(m), i2 = new Float32Array(m);
+  for (let j = 0; j < m; j++) {
+    r0[j] = realInput[3 * j];     i0[j] = imagInput ? imagInput[3 * j] : 0;
+    r1[j] = realInput[3 * j + 1]; i1[j] = imagInput ? imagInput[3 * j + 1] : 0;
+    r2[j] = realInput[3 * j + 2]; i2[j] = imagInput ? imagInput[3 * j + 2] : 0;
+  }
+  const F0 = fft(r0, i0), F1 = fft(r1, i1), F2 = fft(r2, i2);
+  const real = new Float32Array(n), imag = new Float32Array(n);
+  const c1r = -0.5, c1i = -Math.sqrt(3) / 2;   /* e^{-2πi/3} */
+  const c2r = -0.5, c2i = Math.sqrt(3) / 2;    /* e^{-4πi/3} */
+  for (let k = 0; k < m; k++) {
+    const a = -2 * Math.PI * k / n;
+    const w1r = Math.cos(a), w1i = Math.sin(a);
+    const w2r = Math.cos(2 * a), w2i = Math.sin(2 * a);
+    const t1r = w1r * F1.real[k] - w1i * F1.imag[k];
+    const t1i = w1r * F1.imag[k] + w1i * F1.real[k];
+    const t2r = w2r * F2.real[k] - w2i * F2.imag[k];
+    const t2i = w2r * F2.imag[k] + w2i * F2.real[k];
+    real[k] = F0.real[k] + t1r + t2r;
+    imag[k] = F0.imag[k] + t1i + t2i;
+    real[k + m] = F0.real[k] + (c1r * t1r - c1i * t1i) + (c2r * t2r - c2i * t2i);
+    imag[k + m] = F0.imag[k] + (c1r * t1i + c1i * t1r) + (c2r * t2i + c2i * t2r);
+    real[k + 2 * m] = F0.real[k] + (c2r * t1r - c2i * t1i) + (c1r * t2r - c1i * t2i);
+    imag[k + 2 * m] = F0.imag[k] + (c2r * t1i + c2i * t1r) + (c1r * t2i + c1i * t2r);
+  }
+  return { real, imag };
+}
+function fftN(realInput, imagInput = null) {
+  const n = realInput.length;
+  if ((n & (n - 1)) === 0) return fft(realInput, imagInput);
+  const m = n / 3;
+  if (n % 3 === 0 && (m & (m - 1)) === 0) return fftRadix3(realInput, imagInput);
+  throw new Error("unsupported FFT size " + n);
+}
 function ifft(realInput, imagInput) {
   const n = realInput.length;
   const imagConj = new Float32Array(n);
   for (let i = 0; i < n; i++) imagConj[i] = -imagInput[i];
-  const result = fft(realInput, imagConj);
+  const result = fftN(realInput, imagConj);
   for (let i = 0; i < n; i++) {
     result.real[i] /= n;
     result.imag[i] = -result.imag[i] / n;
@@ -70,6 +109,13 @@ function ifft(realInput, imagInput) {
 function hannWindow(n) {
   const w = new Float32Array(n);
   for (let i = 0; i < n; i++) w[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / n));
+  return w;
+}
+/* symmetric hann (numpy.hanning) — used by UVR's chunk overlap blending */
+function hannSym(n) {
+  const w = new Float32Array(n);
+  if (n === 1) { w[0] = 1; return w; }
+  for (let i = 0; i < n; i++) w[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (n - 1));
   return w;
 }
 function padReflect(arr, padLeft, padRight) {
@@ -147,7 +193,7 @@ function stft(x, nFft, hopLength, window, normalized = true, center = true, padM
       const frameData = new Float32Array(nFft);
       for (let i = 0; i < nFft; i++)
         frameData[i] = inputData[b * inputLength + frameStart + i] * window[i] * norm;
-      const { real, imag } = fft(frameData);
+      const { real, imag } = fftN(frameData);
       for (let freq = 0; freq < numFreqs; freq++) {
         const outIdx = b * numFreqs * numFrames + freq * numFrames + frame;
         realOut[outIdx] = real[freq];
@@ -614,6 +660,116 @@ class ONNXHTDemucs {
   }
 }
 
+/* ================= MDX-Net (UVR) engine =================
+   Port of audio-separator's mdx_separator.py + stft.py (MIT), which mirror
+   UVR. The model predicts the primary stem's spectrogram directly from a
+   [1, 4, dim_f, T] tensor of stereo real/imag STFT bins ([L_re, L_im,
+   R_re, R_im]). Used for the two-engine ensemble with Demucs. */
+const MDX_HOP = 1024;
+
+/* one waveform chunk (stereo, chunkSize samples) → model input tensor */
+function mdxSpecFromChunk(chL, chR, nFft, dimF) {
+  const window = hannWindow(nFft);                     /* torch periodic hann */
+  const chunk = new Float32Array(2 * chL.length);
+  chunk.set(chL, 0); chunk.set(chR, chL.length);
+  const z = stft({ data: chunk, shape: [2, chL.length] },
+    nFft, MDX_HOP, window, false, true, "reflect");    /* torch.stft defaults */
+  const freqs = z.real.shape[1], T = z.real.shape[2];
+  const out = new Float32Array(4 * dimF * T);
+  for (let c = 0; c < 2; c++)
+    for (let f = 0; f < dimF; f++) {
+      const src = c * freqs * T + f * T;
+      const dstR = (c * 2) * dimF * T + f * T;
+      const dstI = (c * 2 + 1) * dimF * T + f * T;
+      for (let t = 0; t < T; t++) {
+        out[dstR + t] = z.real.data[src + t];
+        out[dstI + t] = z.imag.data[src + t];
+      }
+    }
+  /* UVR zeroes the first 3 frequency bins */
+  for (let ch = 0; ch < 4; ch++)
+    for (let f = 0; f < 3; f++)
+      out.fill(0, ch * dimF * T + f * T, ch * dimF * T + f * T + T);
+  return { data: out, T };
+}
+
+/* model output tensor → stereo waveform (chunkSize samples) */
+function mdxWaveFromSpec(spec, nFft, dimF, T) {
+  const nBins = (nFft >> 1) + 1;
+  const real = new Float32Array(2 * nBins * T);
+  const imag = new Float32Array(2 * nBins * T);
+  for (let c = 0; c < 2; c++)
+    for (let f = 0; f < dimF; f++) {
+      const dst = c * nBins * T + f * T;
+      const srcR = (c * 2) * dimF * T + f * T;
+      const srcI = (c * 2 + 1) * dimF * T + f * T;
+      for (let t = 0; t < T; t++) {
+        real[dst + t] = spec[srcR + t];
+        imag[dst + t] = spec[srcI + t];
+      }
+    }
+  const window = hannWindow(nFft);
+  return istft(
+    { real: { data: real, shape: [2, nBins, T] }, imag: { data: imag, shape: [2, nBins, T] } },
+    nFft, MDX_HOP, window, false, null, true);
+}
+
+class ONNXMDX {
+  static async init(ortLib, weights, providers, params) {
+    const m = new ONNXMDX();
+    m.ort = ortLib;
+    m.params = params;
+    m.session = await ortLib.InferenceSession.create(
+      weights, providers ? { executionProviders: providers } : undefined);
+    return m;
+  }
+  async run(specData, dimF, T) {
+    const feeds = {};
+    feeds[this.session.inputNames[0]] = new this.ort.Tensor("float32", specData, [1, 4, dimF, T]);
+    const results = await this.session.run(feeds);
+    return results[this.session.outputNames[0]].data;
+  }
+}
+
+/* UVR demix: trim-padded chunking with symmetric-hann overlap blending */
+async function mdxDemix(model, chL, chR, progressCallback, overlap = 0.25) {
+  const { nFft, dimF, T } = model.params;
+  const trim = nFft >> 1;
+  const chunkSize = MDX_HOP * (T - 1);
+  const genSize = chunkSize - 2 * trim;
+  const L = chL.length;
+  const pad = genSize + trim - (L % genSize);
+  const mixLen = trim + L + pad;
+  const mL = new Float32Array(mixLen), mR = new Float32Array(mixLen);
+  mL.set(chL, trim); mR.set(chR, trim);
+  const step = Math.floor((1 - overlap) * chunkSize);
+  const resL = new Float32Array(mixLen), resR = new Float32Array(mixLen);
+  const div = new Float32Array(mixLen);
+  const total = Math.ceil(mixLen / step);
+  let count = 0;
+  if (progressCallback) progressCallback(0, total);
+  for (let i = 0; i < mixLen; i += step) {
+    const end = Math.min(i + chunkSize, mixLen);
+    const actual = end - i;
+    const cL = new Float32Array(chunkSize), cR = new Float32Array(chunkSize);
+    cL.set(mL.subarray(i, end)); cR.set(mR.subarray(i, end));
+    const spek = mdxSpecFromChunk(cL, cR, nFft, dimF);
+    const pred = await model.run(spek.data, dimF, spek.T);
+    const wave = mdxWaveFromSpec(pred, nFft, dimF, spek.T);   /* [2, chunkSize] */
+    const win = hannSym(actual);
+    for (let t = 0; t < actual; t++) {
+      resL[i + t] += wave.data[t] * win[t];
+      resR[i + t] += wave.data[chunkSize + t] * win[t];
+      div[i + t] += win[t];
+    }
+    count++;
+    if (progressCallback) progressCallback(count, total);
+  }
+  for (let t = 0; t < mixLen; t++)
+    if (div[t] > 1e-8) { resL[t] /= div[t]; resR[t] /= div[t]; }
+  return [resL.slice(trim, trim + L), resR.slice(trim, trim + L)];
+}
+
 /* ---------------- WAV encode (16-bit PCM) ---------------- */
 function samplesToWav(channelData, sampleRate) {
   const channels = channelData.length;
@@ -640,12 +796,18 @@ function samplesToWav(channelData, sampleRate) {
 
 /* expose core for the Node validation harness */
 if (typeof globalThis !== "undefined")
-  globalThis.DemucsCore = { separateTracks, ONNXHTDemucs, samplesToWav };
+  globalThis.DemucsCore = { separateTracks, ONNXHTDemucs, samplesToWav,
+    fftN, stft, istft, hannWindow, hannSym, mdxDemix, ONNXMDX };
 
 /* ---------------- worker entry ---------------- */
 if (typeof importScripts === "function") {
   const MODEL_PARTS = ["htdemucs.onnx.part1", "htdemucs.onnx.part2"];
   const MODEL_BYTES = 174263526;
+  /* the MDX ensemble model is fetched at runtime from the UVR community's
+     public model repository (GitHub serves release assets with CORS *),
+     cached in IndexedDB, and identified by UVR's hash scheme (md5 of the
+     last 10MB) against the bundled official parameter file */
+  const MDX_MODEL_URL = "https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/UVR-MDX-NET-Inst_HQ_3.onnx";
 
   function openAiDb() {
     return new Promise((res, rej) => {
@@ -696,6 +858,63 @@ if (typeof importScripts === "function") {
     return full;
   }
 
+  async function cachedMdxModel() {
+    try {
+      const db = await openAiDb();
+      const hit = await new Promise((res) => {
+        const rq = db.transaction("files").objectStore("files").get("mdx");
+        rq.onsuccess = () => res(rq.result || null);
+        rq.onerror = () => res(null);
+      });
+      if (hit && hit.size > 1000000) return new Uint8Array(await hit.arrayBuffer());
+    } catch (e) {}
+    const resp = await fetch(MDX_MODEL_URL);
+    if (!resp.ok) throw new Error("mdx download failed: " + resp.status);
+    const total = +resp.headers.get("content-length") || 0;
+    const chunks = [];
+    let loaded = 0;
+    const reader = resp.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      loaded += value.byteLength;
+      postMessage({ type: "download", what: "mdx", loaded, total: total || loaded });
+    }
+    const full = new Uint8Array(loaded);
+    let off = 0;
+    for (const c of chunks) { full.set(c, off); off += c.byteLength; }
+    try {
+      const db = await openAiDb();
+      const blob = new Blob([full], { type: "application/octet-stream" });
+      await new Promise((res) => {
+        const tx = db.transaction("files", "readwrite");
+        tx.objectStore("files").put(blob, "mdx");
+        tx.oncomplete = res; tx.onerror = res;
+      });
+    } catch (e) {}
+    return full;
+  }
+
+  /* UVR identifies models by md5 of the file's last 10MB */
+  async function mdxParamsFor(bytes, base) {
+    const tail = bytes.length > 10240000 ? bytes.subarray(bytes.length - 10240000) : bytes;
+    /* SparkMD5 needs a non-shared, exact ArrayBuffer */
+    const hash = SparkMD5.ArrayBuffer.hash(tail.slice().buffer);
+    const resp = await fetch(base + "mdx-model-data.json");
+    if (!resp.ok) throw new Error("params file missing");
+    const table = await resp.json();
+    const p = table[hash];
+    if (!p || p.mdx_n_fft_scale_set == null) throw new Error("unknown model hash " + hash);
+    return {
+      nFft: p.mdx_n_fft_scale_set,
+      dimF: p.mdx_dim_f_set,
+      T: Math.pow(2, p.mdx_dim_t_set),
+      compensate: p.compensate || 1,
+      primaryStem: p.primary_stem || "Instrumental"
+    };
+  }
+
   self.onmessage = async (e) => {
     const msg = e.data;
     if (msg.cmd !== "separate") return;
@@ -734,10 +953,11 @@ if (typeof importScripts === "function") {
          karaoke instrumental needs, so only it is accumulated full-length */
       const shifts = msg.shifts | 0;
       const overlap = msg.overlap || 0.25;
+      const ensemble = !!msg.ensemble;
       const stems = await separateTracks(
         model,
         { channelData: chs, sampleRate: msg.sampleRate },
-        (done, total) => postMessage({ type: "progress", done, total }),
+        (done, total) => postMessage({ type: "progress", done, total, phase: ensemble ? "demucs" : undefined }),
         overlap, shifts, "vocals"
       );
       /* instrumental = mix - vocals (means cancel in the difference), scaled
@@ -751,8 +971,54 @@ if (typeof importScripts === "function") {
         for (let i = 0; i < mixCh.length; i++) out[i] = (mixCh[i] - vocCh[i]) * std;
         inst.push(out);
       }
+
+      /* ---- two-engine ensemble: average with an MDX instrumental ---- */
+      if (ensemble) {
+        try {
+          importScripts(base + "spark-md5.min.js");
+          const mdxBytes = await cachedMdxModel();
+          const params = await mdxParamsFor(mdxBytes, base);
+          let mdxModel;
+          try { mdxModel = await ONNXMDX.init(ort, mdxBytes, ["webgpu"], params); }
+          catch (err) { mdxModel = await ONNXMDX.init(ort, mdxBytes, ["wasm"], params); }
+          /* MDX runs on the raw mix, peak-normalized to 0.9 like UVR */
+          const origL = new Float32Array(chs[0].length);
+          const origR = new Float32Array(chs[0].length);
+          let peak = 0;
+          for (let i = 0; i < origL.length; i++) {
+            origL[i] = chs[0][i] * std + mean;
+            origR[i] = chs[1][i] * std + mean;
+            const a = Math.max(Math.abs(origL[i]), Math.abs(origR[i]));
+            if (a > peak) peak = a;
+          }
+          const k = peak > 0.9 ? 0.9 / peak : 1;
+          if (k !== 1) for (let i = 0; i < origL.length; i++) { origL[i] *= k; origR[i] *= k; }
+          const [pL, pR] = await mdxDemix(mdxModel, origL, origR,
+            (done, total) => postMessage({ type: "progress", done, total, phase: "mdx" }));
+          let instMdx;
+          if (params.primaryStem === "Instrumental") {
+            instMdx = [pL, pR];
+            for (const ch of instMdx) for (let i = 0; i < ch.length; i++) ch[i] /= k;
+          } else {
+            /* vocals-primary model: instrumental = mix - vocals*compensate */
+            instMdx = [new Float32Array(pL.length), new Float32Array(pR.length)];
+            for (let i = 0; i < pL.length; i++) {
+              instMdx[0][i] = (origL[i] - pL[i] * params.compensate) / k;
+              instMdx[1][i] = (origR[i] - pR[i] * params.compensate) / k;
+            }
+          }
+          for (let c = 0; c < nCh; c++) {
+            const a = inst[c], b = instMdx[Math.min(c, 1)];
+            for (let i = 0; i < a.length; i++) a[i] = 0.5 * (a[i] + b[i]);
+          }
+        } catch (err) {
+          postMessage({ type: "notice",
+            message: String(err && err.message || err) });
+        }
+      }
+
       const wav = samplesToWav(inst, msg.sampleRate);
-      postMessage({ type: "done", wav, backend }, [wav.buffer]);
+      postMessage({ type: "done", wav, backend, ensemble }, [wav.buffer]);
     } catch (err) {
       postMessage({ type: "error", message: String(err && err.message || err) });
     }
