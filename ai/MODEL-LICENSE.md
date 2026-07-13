@@ -11,6 +11,19 @@ is **not** covered by that license — it is derived from a weights file
 provided by Meta, which is made available for **personal and research use
 only**. This app uses it accordingly (personal, non-commercial karaoke).
 
+## MDX ensemble model (downloaded at runtime, not stored in this repo)
+
+The "מקסימלי" quality tier downloads UVR-MDX-NET-Inst_HQ_3.onnx directly in
+the user's browser from the UVR community's public model repository
+([TRvlvr/model_repo](https://github.com/TRvlvr/model_repo)) and caches it
+locally in IndexedDB. Model parameters are identified via
+`mdx-model-data.json`, the official parameter table from
+[TRvlvr/application_data](https://github.com/TRvlvr/application_data).
+The MDX inference pipeline in separate-worker.js is ported from
+[nomadkaraoke/python-audio-separator](https://github.com/nomadkaraoke/python-audio-separator)
+(MIT), which mirrors [Anjok07/ultimatevocalremovergui](https://github.com/Anjok07/ultimatevocalremovergui) (MIT).
+`spark-md5.min.js` (WTFPL) computes the identification hash.
+
 ## separate-worker.js
 
 Contains the DSP + inference pipeline adapted from
