@@ -1946,6 +1946,9 @@ react/cjs/react-jsx-runtime.production.js:
     } catch (e) {}
     runnerState = null; saveRunner();
     document.getElementById("wt-runner").classList.remove("open");
+    // Push the finished workout to the cloud NOW — the 4s interval push can be
+    // cut off by the post-summary reload, leaving the workout local-only.
+    if (wroteCoreLog && sbConfigured()) sbPush().catch(function () {});
     showSummary({ name: name_, volume: Math.round(volume), done: done, mins: mins, rows: sumRows, records: sumRecords, reload: wroteCoreLog });
   }
   /* End-of-workout summary: totals, new records, best set per exercise. */
@@ -1977,7 +1980,12 @@ react/cjs/react-jsx-runtime.production.js:
     el.classList.add("open");
     document.getElementById("wt-sum-close").addEventListener("click", function () {
       el.classList.remove("open");
-      if (sum.reload) location.reload();
+      if (!sum.reload) return;
+      // Let the cloud push land before reloading (bounded wait).
+      if (sbConfigured()) {
+        var t = setTimeout(function () { location.reload(); }, 4000);
+        sbPush().catch(function () {}).then(function () { clearTimeout(t); location.reload(); });
+      } else location.reload();
     });
     document.getElementById("wt-sum-share").addEventListener("click", function () { shareSummary(sum); });
   }
@@ -2361,7 +2369,7 @@ react/cjs/react-jsx-runtime.production.js:
         '</div>' +
         '<a class="wt-btn" href="index.html" style="text-decoration:none">⌂ חזרה לכל האפליקציות</a>' +
         '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">' +
-        '<div class="wt-ver">מהדורה 25.06 · v38 (גרפים, יעד שבועי ושיתוף)</div>' +
+        '<div class="wt-ver">מהדורה 25.06 · v39 (שמירת אימון מחוזקת)</div>' +
       '</div>';
 
     /* Rest timer overlay */
@@ -2803,7 +2811,7 @@ react/cjs/react-jsx-runtime.production.js:
      triggers one automatic cache-busting reload, or a tap-to-refresh pill when
      a workout is running. APP_VER must be bumped together with version.txt and
      the wt-ver stamp on every deploy. */
-  var APP_VER = 38;
+  var APP_VER = 39;
   function bustReload() { location.replace(location.pathname + "?u=" + Date.now()); }
   function showUpdateBanner() {
     if (document.getElementById("wt-update")) return;
