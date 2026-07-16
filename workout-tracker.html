@@ -990,6 +990,55 @@ react/cjs/react-jsx-runtime.production.js:
     }, 4000);
   }
 
+  /* Rebuild main-history logs from the cloud program_logs journal: any
+     finished A/B runner workout that is missing from gym-tracker-v2 (no log
+     within ±3h of its timestamp) is reconstructed and inserted. Recovers
+     workouts that were lost locally before the immediate-push fix. */
+  function sbRestoreMissing() {
+    var c = sbCfg();
+    if (!sbConfigured()) return;
+    sbStatus("בודק יומן ענן…");
+    fetch(cleanUrl(c.url) + "/rest/v1/program_logs?select=*&order=created_at.asc", { headers: sbHeaders() })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(function (rows) {
+        var raw = JSON.parse(localStorage.getItem("gym-tracker-v2") || "null");
+        if (!raw || !raw.logs) throw new Error("אין נתונים מקומיים");
+        var restored = 0;
+        rows.forEach(function (row) {
+          if (!row.sets_done || !row.data || !row.data.length) return;
+          var b = BUILTIN_PROGRAMS.filter(function (x) { return x.name === row.name; })[0];
+          if (!b) return; // only A/B runs map onto the core history
+          var when = new Date(row.created_at).getTime();
+          var exists = raw.logs.some(function (l) { return Math.abs(new Date(l.date).getTime() - when) < 3 * 3600 * 1000; });
+          if (exists) return;
+          var progMap = {}, exVol = {}, totalSets = 0, doneN = 0, vol = 0;
+          row.data.forEach(function (ex) {
+            totalSets += (ex.sets || []).length;
+            var arr = (ex.sets || []).filter(function (s) { return s.done; }).map(function (s) {
+              return { w: parseFloat(s.w) || 0, r: parseFloat(s.r) || 0, done: true };
+            });
+            doneN += arr.length;
+            arr.forEach(function (s) { vol += s.w * s.r; });
+            if (!ex.ex_id || !arr.length) return;
+            progMap[ex.ex_id] = arr;
+            exVol[ex.ex_id] = Math.round(arr.reduce(function (a, s) { return a + s.w * s.r; }, 0));
+          });
+          if (!Object.keys(progMap).length) return;
+          raw.logs.push({ id: when, date: row.created_at, type: b.key, dur: 40,
+            vol: Math.round(row.volume || vol), sets: doneN, totalSets: totalSets, prog: progMap, exVol: exVol,
+            warm: null, cardio: null, restReal: 0, restPlan: 0, restTarget: 0, restTotalActual: 0,
+            overSum: 0, savedSum: 0, onTimeCount: 0, measuredCount: 0, adherence: null, density: null, rpe: null });
+          restored++;
+        });
+        if (!restored) { sbStatus("לא נמצאו אימונים חסרים ✓"); return; }
+        raw.logs.sort(function (a, b2) { return new Date(a.date) - new Date(b2.date); });
+        localStorage.setItem("gym-tracker-v2", JSON.stringify(raw));
+        sbStatus("שוחזרו " + restored + " אימונים ✓ מעלה לענן…");
+        sbPush().catch(function () {}).then(function () { setTimeout(function () { location.reload(); }, 1200); });
+      })
+      .catch(function (e) { sbStatus("שגיאה: " + e.message); });
+  }
+
   /* ---------- Nutrition (pulled from the food app via a Supabase RPC) ---------- */
   function todayStr() {
     var d = new Date();
@@ -2369,7 +2418,7 @@ react/cjs/react-jsx-runtime.production.js:
         '</div>' +
         '<a class="wt-btn" href="index.html" style="text-decoration:none">⌂ חזרה לכל האפליקציות</a>' +
         '<input type="file" id="wt-file" accept="application/json,.json" style="display:none">' +
-        '<div class="wt-ver">מהדורה 25.06 · v39 (שמירת אימון מחוזקת)</div>' +
+        '<div class="wt-ver">מהדורה 25.06 · v40 (שחזור אימונים)</div>' +
       '</div>';
 
     /* Rest timer overlay */
@@ -2434,6 +2483,7 @@ react/cjs/react-jsx-runtime.production.js:
         '<div class="wt-sync-actions">' +
           '<button class="wt-chip" id="wt-sb-push">⬆ העלה לענן</button>' +
           '<button class="wt-chip" id="wt-sb-pull">⬇ משוך מהענן</button>' +
+          '<button class="wt-chip" id="wt-sb-restore">🔁 שחזר אימונים חסרים</button>' +
         '</div>' +
         '<div class="wt-sync-status" id="wt-sb-status">לא מחובר</div>' +
         '<p class="wt-sync-note">⚠️ קוד הסנכרון הוא הסוד שמגן על הנתונים — בחר ביטוי ארוך וייחודי. אל תשתף את ה-service_role key.</p>' +
@@ -2778,6 +2828,7 @@ react/cjs/react-jsx-runtime.production.js:
     });
     syncOv.querySelector("#wt-sb-push").addEventListener("click", function () { sbStatus("מעלה…"); sbPush(); });
     syncOv.querySelector("#wt-sb-pull").addEventListener("click", function () { sbStatus("מושך…"); sbPull(true); });
+    syncOv.querySelector("#wt-sb-restore").addEventListener("click", sbRestoreMissing);
 
     /* Close overlays with Escape */
     document.addEventListener("keydown", function (e) {
@@ -2811,7 +2862,7 @@ react/cjs/react-jsx-runtime.production.js:
      triggers one automatic cache-busting reload, or a tap-to-refresh pill when
      a workout is running. APP_VER must be bumped together with version.txt and
      the wt-ver stamp on every deploy. */
-  var APP_VER = 39;
+  var APP_VER = 40;
   function bustReload() { location.replace(location.pathname + "?u=" + Date.now()); }
   function showUpdateBanner() {
     if (document.getElementById("wt-update")) return;
