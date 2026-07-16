@@ -217,6 +217,15 @@ try { if (!localStorage.getItem("sb-xgorkdbiptrhdykplodn-auth-token")) location.
     transition:none}
   #lv-finish span{position:relative;z-index:1}
 
+  /* ===== Dim mode (battery saver — wake lock stays, GPS keeps running) ===== */
+  #lv-dim{position:fixed;inset:0;z-index:160;display:none;align-items:center;justify-content:center;
+    background:#000;cursor:pointer}
+  #lv-dim.on{display:flex}
+  .lv-dim-inner{text-align:center;opacity:.28;color:#fff}
+  .lv-dim-inner b{display:block;font-size:54px;font-weight:800}
+  .lv-dim-inner span{display:block;font-size:15px;margin-top:6px;color:#9a9a9a}
+  .lv-dim-hint{font-size:11px !important;margin-top:22px !important;color:#5c5c5c !important}
+
   /* ===== Countdown ===== */
   #countdown{position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center;
     background:var(--dark-bg);color:#fff}
@@ -391,7 +400,10 @@ try { if (!localStorage.getItem("sb-xgorkdbiptrhdykplodn-auth-token")) location.
     <div class="lv-top">
       <span class="num" id="lv-clock">--:--</span>
       <span class="lv-mode" id="lv-mode">🚶 הליכה</span>
-      <span class="gps" id="lv-gps" title="עוצמת GPS"><i></i><i></i><i></i></span>
+      <span style="display:flex;align-items:center;gap:12px">
+        <button id="lv-dim-btn" title="מסך חשוך (חיסכון בסוללה)" style="font-size:17px;padding:2px">🌙</button>
+        <span class="gps" id="lv-gps" title="עוצמת GPS"><i></i><i></i><i></i></span>
+      </span>
     </div>
 
     <div class="lv-timer num" id="lv-timer">00:00</div>
@@ -431,6 +443,15 @@ try { if (!localStorage.getItem("sb-xgorkdbiptrhdykplodn-auth-token")) location.
     </div>
   </div>
 </section>
+
+<!-- ===== dim mode: screen stays on (GPS keeps running), pixels go dark ===== -->
+<div id="lv-dim">
+  <div class="lv-dim-inner">
+    <b class="num" id="lv-dim-timer">00:00</b>
+    <span class="num" id="lv-dim-dist">0.00 ק״מ</span>
+    <span class="lv-dim-hint">הקש כדי לחזור</span>
+  </div>
+</div>
 
 <!-- ================= COUNTDOWN ================= -->
 <div id="countdown"><b id="cd-num">3</b></div>
@@ -482,6 +503,7 @@ try { if (!localStorage.getItem("sb-xgorkdbiptrhdykplodn-auth-token")) location.
 
 /* ---------- storage ---------- */
 const DB_KEY = "rt_data_v1";
+const LIVE_KEY = "rt_live_v1";   // in-progress workout snapshot (crash/lock recovery)
 const DEFAULT_DB = {
   profile: { weight: 80, height: 175, age: 30, sex: "m",
              weeklyGoalKm: 15, autoPause: true, voice: true },
@@ -830,12 +852,36 @@ function beginSession() {
     on: true, mode: uiMode, state: "active",
     goal: uiGoal.type === "free" ? { type: "free", value: 0 }
         : { type: uiGoal.type, value: uiGoal[uiGoal.type] },
-    startTs: Date.now(), movingMs: 0, lastTick: performance.now(),
+    startTs: Date.now(), movingMs: 0, lastTick: performance.now(), lastLiveSave: 0,
     distM: 0, kcal: 0, fatG: 0, elevGain: 0,
     spdKmh: 0, lastFix: null, lastFixAt: 0, lastMoveAt: Date.now(),
     altEma: null, altRef: null,
     path: [], lastPathPt: null, splits: [], goalDone: false
   });
+  attachEngine();
+  speak(S.mode === "run" ? "האימון התחיל. ריצה טובה!" : "האימון התחיל. הליכה נעימה!");
+  toast("💡 מומלץ להשאיר את המסך דולק — נעילת הטלפון עוצרת את ה-GPS. יש כפתור 🌙 לחיסכון בסוללה", 5000);
+}
+
+/* restore an interrupted workout (page killed while phone was locked, etc.) */
+function resumeSession(sn) {
+  Object.assign(S, {
+    on: true, mode: sn.mode || "walk", state: sn.paused ? "paused" : "active",
+    goal: sn.goal || { type: "free", value: 0 },
+    startTs: sn.startTs, movingMs: sn.movingMs || 0,
+    lastTick: performance.now(), lastLiveSave: 0,
+    distM: sn.distM || 0, kcal: sn.kcal || 0, fatG: sn.fatG || 0, elevGain: sn.elevGain || 0,
+    spdKmh: 0, lastFix: null, lastFixAt: 0, lastMoveAt: Date.now(),
+    altEma: null, altRef: null,
+    path: sn.path || [], lastPathPt: null, splits: sn.splits || [], goalDone: !!sn.goalDone
+  });
+  attachEngine();
+  if (S.state === "paused") { $("lv-pause").textContent = "▶ המשך"; $("lv-pause").classList.add("resume"); }
+  if (S.goalDone) $("lv-ring").classList.add("done");
+  toast("האימון שוחזר — ממשיכים מאיפה שעצרנו 💪", 3200);
+}
+
+function attachEngine() {
   document.body.style.overflow = "hidden";
   $("scr-live").classList.remove("hidden");
   $("lv-mode").textContent = S.mode === "run" ? "🏃 ריצה" : "🚶 הליכה";
@@ -849,7 +895,6 @@ function beginSession() {
     { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
   S.tickId = setInterval(tick, 500);
   grabWakeLock();
-  speak(S.mode === "run" ? "האימון התחיל. ריצה טובה!" : "האימון התחיל. הליכה נעימה!");
   renderLive();
 }
 
@@ -878,6 +923,25 @@ function onFix(pos) {
   const d = hav(S.lastFix.lat, S.lastFix.lng, p.lat, p.lng);
   const v = d / dt;                          // m/s
   if (v > 9) { S.lastFix = p; S.lastFixAt = now; return; }   // >32 km/h — GPS jump
+
+  /* suspension gap (phone locked / app backgrounded): the browser froze us,
+     so the ticker never counted this stretch. If the fixes show real movement
+     across the gap, credit the straight-line distance, the elapsed time and
+     the calories at the implied speed; if we stood still, treat it as pause. */
+  if (dt > 20) {
+    if (S.state === "active" && v >= 0.6 && v <= 7.5) {
+      const kmh = v * 3.6, met = metsAt(kmh, S.mode);
+      S.distM += d;
+      S.movingMs += dt * 1000;
+      const dK = met * (db.profile.weight || 80) * (dt / 3600);
+      S.kcal += dK; S.fatG += dK * fatShare(met) / 9;
+      S.spdKmh = kmh;
+      pushPath(p); checkSplits(); checkGoal();
+    }
+    S.lastFix = p; S.lastFixAt = now; S.lastMoveAt = now;
+    renderLive();
+    return;
+  }
 
   S.spdKmh = S.spdKmh * 0.55 + (v * 3.6) * 0.45;
   S.lastFixAt = now;
@@ -957,7 +1021,39 @@ function tick() {
     S.fatG += dK * fatShare(met) / 9;
     if (S.goal.type === "time" || S.goal.type === "kcal") checkGoal();
   }
+  if (now - S.lastLiveSave > 4000) { S.lastLiveSave = now; saveLive(); }
   renderLive();
+}
+
+/* ----- crash / lock recovery: snapshot the live session every few seconds ----- */
+function saveLive() {
+  if (!S.on) return;
+  try {
+    let path = S.path;
+    while (path.length > 500) path = path.filter((_, i) => i % 2 === 0);
+    localStorage.setItem(LIVE_KEY, JSON.stringify({
+      mode: S.mode, goal: S.goal, startTs: S.startTs, movingMs: S.movingMs,
+      distM: S.distM, kcal: S.kcal, fatG: S.fatG, elevGain: S.elevGain,
+      splits: S.splits, goalDone: S.goalDone,
+      paused: S.state === "paused", path, savedAt: Date.now()
+    }));
+  } catch (e) {}
+}
+function loadLiveSnap() {
+  try { return JSON.parse(localStorage.getItem(LIVE_KEY) || "null"); } catch (e) { return null; }
+}
+function snapToWorkout(sn) {
+  const sec = Math.round(sn.movingMs / 1000);
+  let path = sn.path || [];
+  while (path.length > 360) path = path.filter((_, i) => i % 2 === 0 || i === path.length - 1);
+  return {
+    id: "w" + sn.startTs, ts: sn.startTs, mode: sn.mode,
+    goal: { type: sn.goal.type, value: sn.goal.value, achieved: !!sn.goalDone },
+    sec, distM: Math.round(sn.distM),
+    kcal: Math.round(sn.kcal * 10) / 10, fatG: Math.round(sn.fatG * 10) / 10,
+    steps: Math.round(sn.distM / strideM(sn.mode)), elev: Math.round(sn.elevGain),
+    splits: (sn.splits || []).map(s => Math.round(s.sec)), path
+  };
 }
 
 function renderLive() {
@@ -974,6 +1070,10 @@ function renderLive() {
   $("lv-mets").textContent = metsAt(S.spdKmh, S.mode).toFixed(1);
   $("lv-steps").textContent = Math.round(S.distM / strideM(S.mode)).toLocaleString("he-IL");
   $("lv-elev").textContent = Math.round(S.elevGain);
+  if ($("lv-dim").classList.contains("on")) {
+    $("lv-dim-timer").textContent = fmtClock(sec);
+    $("lv-dim-dist").textContent = (S.distM / 1000).toFixed(2) + " ק״מ";
+  }
 
   // hero: goal ring or free distance
   const C = 477.5;
@@ -990,6 +1090,10 @@ function renderLive() {
     $("lv-hero-val").textContent = S.goalDone ? "🎉" : remText;
   }
 }
+
+/* ----- dim mode ----- */
+$("lv-dim-btn").addEventListener("click", () => { $("lv-dim").classList.add("on"); vibrate(20); });
+$("lv-dim").addEventListener("click", () => { $("lv-dim").classList.remove("on"); vibrate(20); });
 
 /* ----- pause / finish ----- */
 $("lv-pause").addEventListener("click", () => {
@@ -1027,6 +1131,8 @@ function stopEngine() {
 
 function finishSession() {
   stopEngine();
+  try { localStorage.removeItem(LIVE_KEY); } catch (e) {}
+  $("lv-dim").classList.remove("on");
   $("scr-live").classList.add("hidden");
   const sec = Math.round(S.movingMs / 1000);
   if (S.distM < 30 && sec < 45) {
@@ -1414,6 +1520,23 @@ $("btn-start").addEventListener("click", startFlow);
 /* ----- boot ----- */
 function renderAll() { renderHome(); renderHistory(); renderStats(); }
 renderAll(); renderProfile(); renderSyncCard(); cloudInit();
+
+/* recover an interrupted workout (page was killed mid-session) */
+(function restoreLive() {
+  const sn = loadLiveSnap();
+  if (!sn || !sn.startTs) return;
+  try { localStorage.removeItem(LIVE_KEY); } catch (e) {}
+  if (Date.now() - (sn.savedAt || 0) > 12 * 3600000) return;      // stale — drop
+  const km = ((sn.distM || 0) / 1000).toFixed(2);
+  if (sn.distM < 30 && sn.movingMs < 45000) return;               // too short to matter
+  if (confirm(`נמצא אימון פעיל שלא הסתיים (${km} ק״מ).\nאישור = המשך האימון · ביטול = שמירה כאימון שהסתיים`)) {
+    resumeSession(sn);
+  } else {
+    const w = snapToWorkout(sn);
+    db.workouts.push(w); saveDB(); renderAll();
+    toast("האימון הקודם נשמר להיסטוריה ✓", 3200);
+  }
+})();
 </script>
 </body>
 </html>
