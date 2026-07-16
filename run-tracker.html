@@ -401,6 +401,7 @@ try { if (!localStorage.getItem("sb-xgorkdbiptrhdykplodn-auth-token")) location.
       <span class="num" id="lv-clock">--:--</span>
       <span class="lv-mode" id="lv-mode">🚶 הליכה</span>
       <span style="display:flex;align-items:center;gap:12px">
+        <span id="lv-wl" title="המסך יישאר דולק" style="font-size:14px;opacity:.25">🔆</span>
         <button id="lv-dim-btn" title="מסך חשוך (חיסכון בסוללה)" style="font-size:17px;padding:2px">🌙</button>
         <span class="gps" id="lv-gps" title="עוצמת GPS"><i></i><i></i><i></i></span>
       </span>
@@ -860,7 +861,9 @@ function beginSession() {
   });
   attachEngine();
   speak(S.mode === "run" ? "האימון התחיל. ריצה טובה!" : "האימון התחיל. הליכה נעימה!");
-  toast("💡 מומלץ להשאיר את המסך דולק — נעילת הטלפון עוצרת את ה-GPS. יש כפתור 🌙 לחיסכון בסוללה", 5000);
+  toast("wakeLock" in navigator
+    ? "🔆 המסך יישאר דולק לאורך האימון — נעילה ידנית עוצרת את ה-GPS. כפתור 🌙 לחיסכון בסוללה"
+    : "⚠️ בדפדפן זה המסך עלול לכבות לבד — מומלץ לבטל נעילה אוטומטית בהגדרות המכשיר", 5000);
 }
 
 /* restore an interrupted workout (page killed while phone was locked, etc.) */
@@ -1161,9 +1164,24 @@ function finishSession() {
   openSummary(w, true);
 }
 
-/* ----- wake lock ----- */
+/* ----- wake lock: keep the screen on for the whole workout -----
+   The OS may release the lock on its own (app switch, battery saver);
+   we re-acquire whenever that happens while a workout is running. */
+function wlIndicator(onNow) {
+  const el = $("lv-wl");
+  if (el) { el.style.opacity = onNow ? "1" : ".25"; el.title = onNow ? "המסך יישאר דולק" : "המסך עלול לכבות"; }
+}
 async function grabWakeLock() {
-  try { if ("wakeLock" in navigator) S.wakeLock = await navigator.wakeLock.request("screen"); } catch (e) {}
+  if (!("wakeLock" in navigator)) { wlIndicator(false); return; }
+  try {
+    S.wakeLock = await navigator.wakeLock.request("screen");
+    wlIndicator(true);
+    S.wakeLock.addEventListener("release", () => {
+      wlIndicator(false);
+      // renew unless the workout ended or the page is hidden (re-acquired on return)
+      if (S.on && document.visibilityState === "visible") setTimeout(grabWakeLock, 400);
+    });
+  } catch (e) { wlIndicator(false); }
 }
 document.addEventListener("visibilitychange", () => {
   if (S.on && document.visibilityState === "visible") grabWakeLock();
